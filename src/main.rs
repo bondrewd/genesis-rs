@@ -154,6 +154,7 @@ fn display_output_header() {
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn display_output(
     step: u32,
     total_energy: f64,
