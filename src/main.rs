@@ -60,7 +60,7 @@ fn compute_potential_energy(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 
         }
     }
 
-    potential_energy
+    potential_energy // kJ/mol
 }
 
 fn compute_kinetic_energy(v: &[[f32; 3]], m: &[f32]) -> f64 {
@@ -75,7 +75,7 @@ fn compute_kinetic_energy(v: &[[f32; 3]], m: &[f32]) -> f64 {
         kinetic_energy += energy as f64;
     }
 
-    kinetic_energy
+    kinetic_energy // kJ/mol
 }
 
 fn display_output_header() {
@@ -94,11 +94,11 @@ fn display_output(step: u32, total_energy: f64, potential_energy: f64, kinetic_e
 
 fn main() {
     let n: usize = 100;
-    let e: f32 = 0.1;
-    let s: f32 = 1.0;
+    let e: f32 = 1.003;
+    let s: f32 = 0.340;
     let b: [f32; 3] = [10.0_f32; 3];
     let b_half: [f32; 3] = [b[0] * 0.5_f32, b[1] * 0.5_f32, b[2] * 0.5_f32];
-    let m: Vec<f32> = vec![1.0_f32; n];
+    let m: Vec<f32> = vec![39.948_f32; n];
     let mut r: Vec<[f32; 4]> = vec![[0.0_f32; 4]; n];
     let mut v: Vec<[f32; 3]> = vec![[0.0_f32; 3]; n];
     let mut f: Vec<[f32; 3]> = vec![[0.0_f32; 3]; n];
