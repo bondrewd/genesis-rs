@@ -1,3 +1,4 @@
+use byteorder::{LittleEndian, WriteBytesExt};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::fs::File;
@@ -173,10 +174,7 @@ fn display_output(
     );
 }
 
-fn write_xyz_file(filename: &str, coordinates: &[[f32; 4]]) -> io::Result<()> {
-    // Open a file for writing, create if it doesn't exist, truncate if it does
-    let mut file = File::create(filename)?;
-
+fn write_xyz_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> {
     // Write the number of atoms (coordinates) at the top of the file
     writeln!(file, "{}", coordinates.len())?;
 
@@ -191,7 +189,114 @@ fn write_xyz_file(filename: &str, coordinates: &[[f32; 4]]) -> io::Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct DcdHeader {
+    num_atoms: u32,
+    num_frames: u32,
+}
+
+fn write_dcd_header(file: &mut File, header: &DcdHeader) -> io::Result<()> {
+    // Block 1
+    // Block size start
+    file.write_u32::<LittleEndian>(84)?;
+    // 01 - 04: "CORD" magic number
+    file.write_all(b"CORD")?;
+    // 05 - 08: Number of frames
+    file.write_u32::<LittleEndian>(header.num_frames)?;
+    // 09 - 12: Unused u32 (first step)
+    file.write_u32::<LittleEndian>(0)?;
+    // 13 - 16: Unused u32 (save interval)
+    file.write_u32::<LittleEndian>(0)?;
+    // 17 - 36: Unused u32
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    // 37 - 40: Unused u32 (number of atoms)
+    file.write_u32::<LittleEndian>(0)?;
+    // 41 - 48: Unused f64 (time step)
+    file.write_f64::<LittleEndian>(0.0)?;
+    // 49 - 52: Unused u32 (unit cell)
+    file.write_u32::<LittleEndian>(0)?;
+    // 53 - 84: Unused u32
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    // Block size end
+    file.write_u32::<LittleEndian>(84)?;
+
+    // Block 2
+    // Block size start
+    file.write_u32::<LittleEndian>(84)?;
+    // 01 - 04: Number of lines
+    file.write_u32::<LittleEndian>(1)?;
+    // 05 - 84: Comment
+    file.write_all(b"                ")?;
+    file.write_all(b"                ")?;
+    file.write_all(b"                ")?;
+    file.write_all(b"                ")?;
+    file.write_all(b"                ")?;
+    // Block size end
+    file.write_u32::<LittleEndian>(84)?;
+
+    // Block 3
+    // Block size start
+    file.write_u32::<LittleEndian>(4)?;
+    // 01 - 04: Number of particles
+    file.write_u32::<LittleEndian>(header.num_atoms)?;
+    // Block size end
+    file.write_u32::<LittleEndian>(4)?;
+
+    Ok(())
+}
+
+fn write_dcd_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> {
+    // For each frame, DCD stores X, Y, and Z coordinates in separate chunks
+    let block_size = coordinates.len() as u32 * 4;
+
+    // Write X coordinates
+    // Block size start
+    file.write_u32::<LittleEndian>(block_size)?;
+    // Write X coordinates
+    for coord in coordinates {
+        file.write_f32::<LittleEndian>(coord[0])?;
+    }
+    // Block size end
+    file.write_u32::<LittleEndian>(block_size)?;
+
+    // Write X coordinates
+    // Block size start
+    file.write_u32::<LittleEndian>(block_size)?;
+    // Write X coordinates
+    for coord in coordinates {
+        file.write_f32::<LittleEndian>(coord[1])?;
+    }
+    // Block size end
+    file.write_u32::<LittleEndian>(block_size)?;
+
+    // Write X coordinates
+    // Block size start
+    file.write_u32::<LittleEndian>(block_size)?;
+    // Write X coordinates
+    for coord in coordinates {
+        file.write_f32::<LittleEndian>(coord[2])?;
+    }
+    // Block size end
+    file.write_u32::<LittleEndian>(block_size)?;
+
+    Ok(())
+}
+
 fn main() {
+    let mut out_dcd: File = File::create("out.dcd").expect("Failed to create DCD file");
+    let mut out_xyz: File = File::create("out.xyz").expect("Failed to create XYZ file");
+
     let n: usize = 100;
     let e: f32 = 1.003;
     let s: f32 = 0.340;
@@ -217,6 +322,7 @@ fn main() {
     }
 
     let out_ene_freq: u32 = 1000;
+    let out_dcd_freq: u32 = 10;
     let rem_com_freq: u32 = 10;
     assert!(
         out_ene_freq % rem_com_freq == 0,
@@ -247,6 +353,15 @@ fn main() {
     let dt: f32 = 0.001;
     let dt_half: f32 = dt * 0.5;
     let n_steps: u32 = 10000;
+
+    let header = DcdHeader {
+        num_atoms: n as u32,
+        num_frames: n_steps / out_dcd_freq + 1,
+    };
+
+    write_dcd_header(&mut out_dcd, &header).expect("Failed to write DCD header");
+    write_dcd_frame(&mut out_dcd, &r).expect("Failed to write DCD frame");
+
     for step in 1..=n_steps {
         for i in 0..n {
             r[i][0] += v[i][0] * dt_half;
@@ -276,6 +391,10 @@ fn main() {
             remove_v_com(&mut v, &m);
         }
 
+        if step % out_dcd_freq == 0 {
+            write_dcd_frame(&mut out_dcd, &r).expect("Failed to write DCD frame");
+        }
+
         if step % out_ene_freq == 0 {
             potential_energy = compute_potential_energy(&r, e, s, b);
             kinetic_energy = compute_kinetic_energy(&v, &m);
@@ -297,5 +416,5 @@ fn main() {
         }
     }
 
-    write_xyz_file("out.xyz", &r).expect("Failed to write XYZ file");
+    write_xyz_frame(&mut out_xyz, &r).expect("Failed to write XYZ file");
 }
