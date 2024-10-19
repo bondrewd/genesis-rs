@@ -1,7 +1,7 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-fn compute_force(r: &Vec<[f32; 4]>, f: &mut Vec<[f32; 3]>, e: f32, s: f32, b: [f32; 3]) {
+fn compute_force(r: &[[f32; 4]], f: &mut [[f32; 3]], e: f32, s: f32, b: [f32; 3]) {
     let s2: f32 = s * s;
 
     for i in 0..r.len() {
@@ -34,7 +34,7 @@ fn compute_force(r: &Vec<[f32; 4]>, f: &mut Vec<[f32; 3]>, e: f32, s: f32, b: [f
     }
 }
 
-fn compute_potential_energy(r: &Vec<[f32; 4]>, e: f32, s: f32, b: [f32; 3]) -> f64 {
+fn compute_potential_energy(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 {
     let mut potential_energy: f64 = 0.0;
     let s2: f32 = s * s;
 
@@ -42,10 +42,10 @@ fn compute_potential_energy(r: &Vec<[f32; 4]>, e: f32, s: f32, b: [f32; 3]) -> f
         let xi: f32 = r[i][0];
         let yi: f32 = r[i][1];
         let zi: f32 = r[i][2];
-        for j in (i + 1)..r.len() {
-            let mut dx: f32 = r[j][0] - xi;
-            let mut dy: f32 = r[j][1] - yi;
-            let mut dz: f32 = r[j][2] - zi;
+        for rj in r.iter().skip(i + 1) {
+            let mut dx: f32 = rj[0] - xi;
+            let mut dy: f32 = rj[1] - yi;
+            let mut dz: f32 = rj[2] - zi;
             dx -= b[0] * (dx / b[0]).round();
             dy -= b[1] * (dy / b[1]).round();
             dz -= b[2] * (dz / b[2]).round();
@@ -63,7 +63,7 @@ fn compute_potential_energy(r: &Vec<[f32; 4]>, e: f32, s: f32, b: [f32; 3]) -> f
     potential_energy
 }
 
-fn compute_kinetic_energy(v: &Vec<[f32; 3]>, m: &Vec<f32>) -> f64 {
+fn compute_kinetic_energy(v: &[[f32; 3]], m: &[f32]) -> f64 {
     let mut kinetic_energy: f64 = 0.0;
 
     for i in 0..v.len() {
@@ -133,10 +133,10 @@ fn main() {
             r[i][2] += v[i][2] * dt_half;
         }
 
-        for i in 0..n {
-            f[i][0] = 0.0_f32;
-            f[i][1] = 0.0_f32;
-            f[i][2] = 0.0_f32;
+        for fi in f.iter_mut() {
+            fi[0] = 0.0_f32;
+            fi[1] = 0.0_f32;
+            fi[2] = 0.0_f32;
         }
 
         compute_force(&r, &mut f, e, s, b);
