@@ -203,31 +203,33 @@ fn write_dcd_header(file: &mut File, header: &DcdHeader) -> io::Result<()> {
     file.write_all(b"CORD")?;
     // 05 - 08: Number of frames
     file.write_u32::<LittleEndian>(header.num_frames)?;
-    // 09 - 12: Unused u32 (first step)
+    // 09 - 12: Unused (first step)
     file.write_u32::<LittleEndian>(0)?;
-    // 13 - 16: Unused u32 (save interval)
+    // 13 - 16: Unused (output period)
     file.write_u32::<LittleEndian>(0)?;
-    // 17 - 36: Unused u32
+    // 17 - 20: Unused (number of time steps)
     file.write_u32::<LittleEndian>(0)?;
-    file.write_u32::<LittleEndian>(0)?;
-    file.write_u32::<LittleEndian>(0)?;
-    file.write_u32::<LittleEndian>(0)?;
-    file.write_u32::<LittleEndian>(0)?;
-    // 37 - 40: Unused u32 (number of atoms)
-    file.write_u32::<LittleEndian>(0)?;
-    // 41 - 48: Unused f64 (time step)
-    file.write_f64::<LittleEndian>(0.0)?;
-    // 49 - 52: Unused u32 (unit cell)
-    file.write_u32::<LittleEndian>(0)?;
-    // 53 - 84: Unused u32
+    // 21 - 40: Unused
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    // 41 - 44: Unused (time step)
+    file.write_f32::<LittleEndian>(0.0)?;
+    // 45 - 48: Unit cell flag
+    file.write_u32::<LittleEndian>(1)?;
+    // 49 - 80: Unused
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
     file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    file.write_u32::<LittleEndian>(0)?;
+    // 81 - 84: Version
+    file.write_u32::<LittleEndian>(24)?;
     // Block size end
     file.write_u32::<LittleEndian>(84)?;
 
@@ -256,15 +258,27 @@ fn write_dcd_header(file: &mut File, header: &DcdHeader) -> io::Result<()> {
     Ok(())
 }
 
-fn write_dcd_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> {
+fn write_dcd_frame(file: &mut File, r: &[[f32; 4]], b: [f32; 3]) -> io::Result<()> {
+    // Block size start
+    file.write_u32::<LittleEndian>(48)?;
+    // Write X coordinates
+    file.write_f64::<LittleEndian>(b[0] as f64)?;
+    file.write_f64::<LittleEndian>(0.0)?;
+    file.write_f64::<LittleEndian>(b[1] as f64)?;
+    file.write_f64::<LittleEndian>(0.0)?;
+    file.write_f64::<LittleEndian>(0.0)?;
+    file.write_f64::<LittleEndian>(b[2] as f64)?;
+    // Block size end
+    file.write_u32::<LittleEndian>(48)?;
+
     // For each frame, DCD stores X, Y, and Z coordinates in separate chunks
-    let block_size = coordinates.len() as u32 * 4;
+    let block_size = r.len() as u32 * 4;
 
     // Write X coordinates
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in coordinates {
+    for coord in r {
         file.write_f32::<LittleEndian>(coord[0])?;
     }
     // Block size end
@@ -274,7 +288,7 @@ fn write_dcd_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> 
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in coordinates {
+    for coord in r {
         file.write_f32::<LittleEndian>(coord[1])?;
     }
     // Block size end
@@ -284,7 +298,7 @@ fn write_dcd_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> 
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in coordinates {
+    for coord in r {
         file.write_f32::<LittleEndian>(coord[2])?;
     }
     // Block size end
@@ -360,7 +374,7 @@ fn main() {
     };
 
     write_dcd_header(&mut out_dcd, &header).expect("Failed to write DCD header");
-    write_dcd_frame(&mut out_dcd, &r).expect("Failed to write DCD frame");
+    write_dcd_frame(&mut out_dcd, &r, b).expect("Failed to write DCD frame");
 
     for step in 1..=n_steps {
         for i in 0..n {
@@ -392,7 +406,7 @@ fn main() {
         }
 
         if step % out_dcd_freq == 0 {
-            write_dcd_frame(&mut out_dcd, &r).expect("Failed to write DCD frame");
+            write_dcd_frame(&mut out_dcd, &r, b).expect("Failed to write DCD frame");
         }
 
         if step % out_ene_freq == 0 {
