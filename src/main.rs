@@ -1,6 +1,7 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand_distr::{Distribution, Normal};
 use std::fs::File;
 use std::io::{self, Write};
 
@@ -126,6 +127,18 @@ fn compute_pressure(virial: f64, temperature: f64, volume: f64, dof: u32) -> f64
     let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
     let pressure: f64 = (virial + 3.0 * dof as f64 * boltzmann * temperature) / (3.0 * volume);
     pressure
+}
+
+fn initialize_velocities(v: &mut [[f32; 3]], m: &[f32], temperature: f64, rng: &mut StdRng) {
+    let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
+
+    for i in 0..v.len() {
+        let sigma: f64 = (boltzmann * temperature / m[i] as f64).sqrt();
+        let normal_dist = Normal::new(0.0, sigma).unwrap();
+        v[i][0] = normal_dist.sample(rng) as f32;
+        v[i][1] = normal_dist.sample(rng) as f32;
+        v[i][2] = normal_dist.sample(rng) as f32;
+    }
 }
 
 fn remove_v_com(v: &mut [[f32; 3]], m: &[f32]) {
@@ -315,7 +328,6 @@ fn main() {
     let e: f32 = 1.003;
     let s: f32 = 0.340;
     let b: [f32; 3] = [20.0; 3];
-    let b_half: [f32; 3] = [b[0] * 0.5, b[1] * 0.5, b[2] * 0.5];
     let dof: u32 = 3 * n as u32 - 3;
     let m: Vec<f32> = vec![39.948; n];
     let mut r: Vec<[f32; 4]> = vec![[0.0; 4]; n];
@@ -324,16 +336,16 @@ fn main() {
 
     let mut rng: StdRng = StdRng::seed_from_u64(0);
 
-    for i in 0..n {
-        r[i][0] = rng.gen_range(-b_half[0]..b_half[0]);
-        r[i][1] = rng.gen_range(-b_half[1]..b_half[1]);
-        r[i][2] = rng.gen_range(-b_half[2]..b_half[2]);
-        r[i][3] = rng.gen_range(-1.0..1.0);
-
-        v[i][0] = rng.gen_range(-15.0..15.0);
-        v[i][1] = rng.gen_range(-15.0..15.0);
-        v[i][2] = rng.gen_range(-15.0..15.0);
+    for ri in r.iter_mut() {
+        ri[0] = rng.gen_range(0.0..b[0]);
+        ri[1] = rng.gen_range(0.0..b[1]);
+        ri[2] = rng.gen_range(0.0..b[2]);
+        ri[3] = rng.gen_range(-1.0..1.0);
     }
+
+    let target_temperature: f64 = 100.0;
+    initialize_velocities(&mut v, &m, target_temperature, &mut rng);
+    remove_v_com(&mut v, &m);
 
     let out_ene_freq: u32 = 1000;
     let out_dcd_freq: u32 = 10;
@@ -342,8 +354,10 @@ fn main() {
         out_ene_freq % rem_com_freq == 0,
         "out_ene_freq is not a multiple of rem_com_freq"
     );
-
-    remove_v_com(&mut v, &m);
+    assert!(
+        out_dcd_freq % rem_com_freq == 0,
+        "out_dcd_freq is not a multiple of rem_com_freq"
+    );
 
     display_output_header();
     let mut potential_energy: f64 = compute_potential_energy(&r, e, s, b);
