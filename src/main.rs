@@ -78,17 +78,51 @@ fn compute_kinetic_energy(v: &[[f32; 3]], m: &[f32]) -> f64 {
     kinetic_energy // kJ/mol
 }
 
+fn compute_temperature(ke: f64, dof: u32) -> f64 {
+    let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
+    let temperature: f64 = 2.0 * ke / (dof as f64 * boltzmann);
+    temperature
+}
+
+fn remove_v_com(v: &mut [[f32; 3]], m: &[f32]) {
+    let mut v_com: [f32; 3] = [0.0_f32; 3];
+    let mut m_tot: f32 = 0.0;
+
+    for i in 0..v.len() {
+        v_com[0] += m[i] * v[i][0];
+        v_com[1] += m[i] * v[i][1];
+        v_com[2] += m[i] * v[i][2];
+        m_tot += m[i];
+    }
+
+    v_com[0] /= m_tot;
+    v_com[1] /= m_tot;
+    v_com[2] /= m_tot;
+
+    for vi in v.iter_mut() {
+        vi[0] -= v_com[0];
+        vi[1] -= v_com[1];
+        vi[2] -= v_com[2];
+    }
+}
+
 fn display_output_header() {
     println!(
-        "{:>8} {:>14} {:>14} {:>14}",
-        "Step", "Total", "Potential", "Kinetic"
+        "{:>8} {:>14} {:>14} {:>14} {:>14}",
+        "Step", "Total", "Potential", "Kinetic", "Temperature",
     );
 }
 
-fn display_output(step: u32, total_energy: f64, potential_energy: f64, kinetic_energy: f64) {
+fn display_output(
+    step: u32,
+    total_energy: f64,
+    potential_energy: f64,
+    kinetic_energy: f64,
+    temperature: f64,
+) {
     println!(
-        "{:>8} {:>14.6} {:>14.6} {:>14.6}",
-        step, total_energy, potential_energy, kinetic_energy,
+        "{:>8} {:>14.6} {:>14.6} {:>14.6} {:>14.6}",
+        step, total_energy, potential_energy, kinetic_energy, temperature,
     );
 }
 
@@ -98,6 +132,7 @@ fn main() {
     let s: f32 = 0.340;
     let b: [f32; 3] = [10.0_f32; 3];
     let b_half: [f32; 3] = [b[0] * 0.5_f32, b[1] * 0.5_f32, b[2] * 0.5_f32];
+    let dof: u32 = 3 * n as u32 - 3;
     let m: Vec<f32> = vec![39.948_f32; n];
     let mut r: Vec<[f32; 4]> = vec![[0.0_f32; 4]; n];
     let mut v: Vec<[f32; 3]> = vec![[0.0_f32; 3]; n];
@@ -116,16 +151,31 @@ fn main() {
         v[i][2] = rng.gen_range(-0.5..0.5);
     }
 
+    let out_ene_freq: u32 = 100;
+    let rem_com_freq: u32 = 100;
+    assert!(
+        out_ene_freq % rem_com_freq == 0,
+        "out_ene_freq is not a multiple of rem_com_freq"
+    );
+
+    remove_v_com(&mut v, &m);
+
     display_output_header();
     let mut potential_energy: f64 = compute_potential_energy(&r, e, s, b);
     let mut kinetic_energy: f64 = compute_kinetic_energy(&v, &m);
     let mut total_energy: f64 = potential_energy + kinetic_energy;
-    display_output(0, total_energy, potential_energy, kinetic_energy);
+    let mut temperature: f64 = compute_temperature(kinetic_energy, dof);
+    display_output(
+        0,
+        total_energy,
+        potential_energy,
+        kinetic_energy,
+        temperature,
+    );
 
     let dt: f32 = 0.00001;
     let dt_half: f32 = dt * 0.5_f32;
     let n_steps: u32 = 1000;
-    let out_ene_freq: u32 = 100;
     for step in 1..=n_steps {
         for i in 0..n {
             r[i][0] += v[i][0] * dt_half;
@@ -151,11 +201,22 @@ fn main() {
             r[i][2] += v[i][2] * dt_half;
         }
 
+        if step % rem_com_freq == 0 {
+            remove_v_com(&mut v, &m);
+        }
+
         if step % out_ene_freq == 0 {
             potential_energy = compute_potential_energy(&r, e, s, b);
             kinetic_energy = compute_kinetic_energy(&v, &m);
             total_energy = potential_energy + kinetic_energy;
-            display_output(step, total_energy, potential_energy, kinetic_energy);
+            temperature = compute_temperature(kinetic_energy, dof);
+            display_output(
+                step,
+                total_energy,
+                potential_energy,
+                kinetic_energy,
+                temperature,
+            );
         }
     }
 }
