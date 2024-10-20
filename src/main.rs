@@ -9,6 +9,7 @@ use std::fs;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 fn compute_force(r: &[[f32; 4]], f: &mut [[f32; 3]], e: f32, s: f32, b: [f32; 3]) {
     let s2: f32 = s * s;
@@ -385,7 +386,44 @@ fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
     }
 }
 
+fn report_profile(
+    setup_time: Duration,
+    output_time: Duration,
+    dynamics_time: Duration,
+    total_time: Duration,
+) {
+    // Convert durations to seconds for easier formatting
+    let setup_secs = setup_time.as_secs_f64();
+    let output_secs = output_time.as_secs_f64();
+    let dynamics_secs = dynamics_time.as_secs_f64();
+    let total_secs = total_time.as_secs_f64();
+
+    // Calculate percentages
+    let setup_percent = (setup_secs / total_secs) * 100.0;
+    let output_percent = (output_secs / total_secs) * 100.0;
+    let dynamics_percent = (dynamics_secs / total_secs) * 100.0;
+
+    // Print the profile report
+    println!("Profile Report:");
+    println!("setup    = {:>5.1}% {:.3}s ", setup_percent, setup_secs);
+    println!("output   = {:>5.1}% {:.3}s ", output_percent, output_secs);
+    println!(
+        "dynamics = {:>5.1}% {:.3}s",
+        dynamics_percent, dynamics_secs
+    );
+    println!("total    = 100.0% {:.3}s", total_secs);
+}
+
 fn main() {
+    // Variables to store the duration of each section
+    let mut setup_time = Duration::new(0, 0);
+    let mut output_time = Duration::new(0, 0);
+    let mut dynamics_time = Duration::new(0, 0);
+
+    ////////////////////////////////////////
+    let start = Instant::now();
+    //**************************************
+
     // Parse command-line arguments
     let args = Args::parse();
 
@@ -458,6 +496,23 @@ fn main() {
         "out_dcd_freq is not a multiple of rem_com_freq"
     );
 
+    let dt: f32 = config.dynamics.time_step;
+    let dt_half: f32 = dt * 0.5;
+    let n_steps: u32 = config.dynamics.num_steps;
+
+    let header = DcdHeader {
+        num_atoms: n as u32,
+        num_frames: n_steps / out_dcd_freq + 1,
+    };
+
+    //**************************************
+    setup_time += start.elapsed();
+    ////////////////////////////////////////
+
+    ////////////////////////////////////////
+    let start = Instant::now();
+    //**************************************
+
     display_output_header();
     let mut potential_energy: f64 = compute_potential_energy(&r, e, s, b);
     let mut kinetic_energy: f64 = compute_kinetic_energy(&v, &m);
@@ -477,19 +532,18 @@ fn main() {
         pressure,
     );
 
-    let dt: f32 = config.dynamics.time_step;
-    let dt_half: f32 = dt * 0.5;
-    let n_steps: u32 = config.dynamics.num_steps;
-
-    let header = DcdHeader {
-        num_atoms: n as u32,
-        num_frames: n_steps / out_dcd_freq + 1,
-    };
-
     write_dcd_header(&mut out_dcd_file, &header).expect("Failed to write DCD header");
     write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
 
+    //**************************************
+    output_time += start.elapsed();
+    ////////////////////////////////////////
+
     for step in 1..=n_steps {
+        ////////////////////////////////////////
+        let start = Instant::now();
+        //**************************************
+
         for i in 0..n {
             r[i][0] += v[i][0] * dt_half;
             r[i][1] += v[i][1] * dt_half;
@@ -518,6 +572,14 @@ fn main() {
             remove_v_com(&mut v, &m);
         }
 
+        //**************************************
+        dynamics_time += start.elapsed();
+        ////////////////////////////////////////
+
+        ////////////////////////////////////////
+        let start = Instant::now();
+        //**************************************
+
         if step % out_dcd_freq == 0 {
             write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
         }
@@ -541,7 +603,25 @@ fn main() {
                 pressure,
             );
         }
+
+        //**************************************
+        output_time += start.elapsed();
+        ////////////////////////////////////////
     }
 
+    ////////////////////////////////////////
+    let start = Instant::now();
+    //**************************************
+
     write_xyz_frame(&mut out_xyz_file, &r).expect("Failed to write XYZ file");
+
+    //**************************************
+    output_time += start.elapsed();
+    ////////////////////////////////////////
+
+    // Calculate total time
+    let total_time = setup_time + output_time + dynamics_time;
+
+    // Report the results
+    report_profile(setup_time, output_time, dynamics_time, total_time);
 }
