@@ -1,9 +1,14 @@
 use byteorder::{LittleEndian, WriteBytesExt};
+use clap::Parser;
+use dirs::home_dir;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
+use serde::Deserialize;
+use std::fs;
 use std::fs::File;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn compute_force(r: &[[f32; 4]], f: &mut [[f32; 3]], e: f32, s: f32, b: [f32; 3]) {
     let s2: f32 = s * s;
@@ -320,14 +325,108 @@ fn write_dcd_frame(file: &mut File, r: &[[f32; 4]], b: [f32; 3]) -> io::Result<(
     Ok(())
 }
 
+/// A simple program to initialize variables from a TOML file
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the .toml configuration file (positional argument)
+    config: String,
+}
+
+/// Struct to represent the "output" section in the TOML file
+#[derive(Debug, Deserialize)]
+struct Output {
+    out_xyz_path: String,
+    out_dcd_path: String,
+}
+
+/// Struct to represent the "dynamics" section in the TOML file
+#[derive(Debug, Deserialize)]
+struct Dynamics {
+    time_step: f32,
+    num_steps: u32,
+    temperature: f64,
+}
+
+/// Struct to represent the "boundary" section in the TOML file
+#[derive(Debug, Deserialize)]
+struct Boundary {
+    length_x: f32,
+    length_y: f32,
+    length_z: f32,
+}
+
+/// Main config struct combining all sections
+#[derive(Debug, Deserialize)]
+struct Config {
+    output: Output,
+    dynamics: Dynamics,
+    boundary: Boundary,
+}
+
+/// Expand `~` to the home directory
+fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
+    let path_str = path.as_ref().to_string_lossy().to_string();
+    if path_str.starts_with("~") {
+        if let Some(home) = home_dir() {
+            return PathBuf::from(path_str.replacen("~", &home.to_string_lossy(), 1));
+        }
+    }
+    PathBuf::from(path_str)
+}
+
+/// Resolve the path to handle relative vs. absolute paths
+fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
+    let path = expand_tilde(Path::new(path.as_ref()));
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base_dir.join(path)
+    }
+}
+
 fn main() {
-    let mut out_dcd: File = File::create("out.dcd").expect("Failed to create DCD file");
-    let mut out_xyz: File = File::create("out.xyz").expect("Failed to create XYZ file");
+    // Parse command-line arguments
+    let args = Args::parse();
+
+    // Read the TOML file from the given path
+    let config_path = Path::new(&args.config);
+    let config_content = match fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Failed to read the config file {:?}: {}", config_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Parse the TOML file into the `Config` struct
+    let config: Config = match toml::from_str(&config_content) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Failed to parse the config file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Get the directory where the config file is located
+    let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));
+
+    // Resolve the output file paths
+    let out_xyz_path = resolve_path(&config.output.out_xyz_path, config_dir);
+    let out_dcd_path = resolve_path(&config.output.out_dcd_path, config_dir);
+
+    // Initialize the output files
+    let mut out_dcd_file: File = File::create(out_dcd_path).expect("Failed to create DCD file");
+    let mut out_xyz_file: File = File::create(out_xyz_path).expect("Failed to create XYZ file");
 
     let n: usize = 100;
     let e: f32 = 1.003;
     let s: f32 = 0.340;
-    let b: [f32; 3] = [20.0; 3];
+    let b: [f32; 3] = [
+        config.boundary.length_x,
+        config.boundary.length_y,
+        config.boundary.length_z,
+    ];
     let dof: u32 = 3 * n as u32 - 3;
     let m: Vec<f32> = vec![39.948; n];
     let mut r: Vec<[f32; 4]> = vec![[0.0; 4]; n];
@@ -343,7 +442,7 @@ fn main() {
         ri[3] = rng.gen_range(-1.0..1.0);
     }
 
-    let target_temperature: f64 = 100.0;
+    let target_temperature: f64 = config.dynamics.temperature;
     initialize_velocities(&mut v, &m, target_temperature, &mut rng);
     remove_v_com(&mut v, &m);
 
@@ -378,17 +477,17 @@ fn main() {
         pressure,
     );
 
-    let dt: f32 = 0.001;
+    let dt: f32 = config.dynamics.time_step;
     let dt_half: f32 = dt * 0.5;
-    let n_steps: u32 = 10000;
+    let n_steps: u32 = config.dynamics.num_steps;
 
     let header = DcdHeader {
         num_atoms: n as u32,
         num_frames: n_steps / out_dcd_freq + 1,
     };
 
-    write_dcd_header(&mut out_dcd, &header).expect("Failed to write DCD header");
-    write_dcd_frame(&mut out_dcd, &r, b).expect("Failed to write DCD frame");
+    write_dcd_header(&mut out_dcd_file, &header).expect("Failed to write DCD header");
+    write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
 
     for step in 1..=n_steps {
         for i in 0..n {
@@ -420,7 +519,7 @@ fn main() {
         }
 
         if step % out_dcd_freq == 0 {
-            write_dcd_frame(&mut out_dcd, &r, b).expect("Failed to write DCD frame");
+            write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
         }
 
         if step % out_ene_freq == 0 {
@@ -444,5 +543,5 @@ fn main() {
         }
     }
 
-    write_xyz_frame(&mut out_xyz, &r).expect("Failed to write XYZ file");
+    write_xyz_frame(&mut out_xyz_file, &r).expect("Failed to write XYZ file");
 }

@@ -1,0 +1,13 @@
+[output]
+out_xyz_path = "out.xyz"
+out_dcd_path = "out.dcd"
+
+[dynamics]
+time_step = 0.001
+num_steps = 10000
+temperature = 100.0
+
+[boundary]
+length_x = 20.0
+length_y = 20.0
+length_z = 20.0
