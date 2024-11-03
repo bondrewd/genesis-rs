@@ -1,6 +1,7 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use clap::Parser;
 use dirs::home_dir;
+use nalgebra::Vector3;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
@@ -12,38 +13,25 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
-struct Boundary {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-
-impl Boundary {
-    fn new(x: f32, y: f32, z: f32) -> Self {
-        Boundary { x, y, z }
-    }
-}
-
-#[derive(Debug)]
 struct System {
     n: usize,
-    b: Boundary,
+    b: Vector3<f32>,
     m: Vec<f32>,
     q: Vec<f32>,
-    r: Vec<[f32; 3]>,
-    v: Vec<[f32; 3]>,
-    f: Vec<[f32; 3]>,
+    r: Vec<Vector3<f32>>,
+    v: Vec<Vector3<f32>>,
+    f: Vec<Vector3<f32>>,
 }
 
 impl System {
     pub fn new(
         n: usize,
-        b: Boundary,
+        b: Vector3<f32>,
         m: Vec<f32>,
         q: Vec<f32>,
-        r: Vec<[f32; 3]>,
-        v: Vec<[f32; 3]>,
-        f: Vec<[f32; 3]>,
+        r: Vec<Vector3<f32>>,
+        v: Vec<Vector3<f32>>,
+        f: Vec<Vector3<f32>>,
     ) -> Self {
         System {
             n,
@@ -60,12 +48,12 @@ impl System {
 #[derive(Debug, Default)]
 struct SystemBuilder {
     n: Option<usize>,
-    b: Option<Boundary>,
+    b: Option<Vector3<f32>>,
     m: Option<Vec<f32>>,
     q: Option<Vec<f32>>,
-    r: Option<Vec<[f32; 3]>>,
-    v: Option<Vec<[f32; 3]>>,
-    f: Option<Vec<[f32; 3]>>,
+    r: Option<Vec<Vector3<f32>>>,
+    v: Option<Vec<Vector3<f32>>>,
+    f: Option<Vec<Vector3<f32>>>,
 }
 
 impl SystemBuilder {
@@ -78,7 +66,7 @@ impl SystemBuilder {
         self
     }
 
-    pub fn b(mut self, b: Boundary) -> Self {
+    pub fn b(mut self, b: Vector3<f32>) -> Self {
         self.b = Some(b);
         self
     }
@@ -93,17 +81,17 @@ impl SystemBuilder {
         self
     }
 
-    pub fn r(mut self, r: Vec<[f32; 3]>) -> Self {
+    pub fn r(mut self, r: Vec<Vector3<f32>>) -> Self {
         self.r = Some(r);
         self
     }
 
-    pub fn v(mut self, v: Vec<[f32; 3]>) -> Self {
+    pub fn v(mut self, v: Vec<Vector3<f32>>) -> Self {
         self.v = Some(v);
         self
     }
 
-    pub fn f(mut self, f: Vec<[f32; 3]>) -> Self {
+    pub fn f(mut self, f: Vec<Vector3<f32>>) -> Self {
         self.f = Some(f);
         self
     }
@@ -134,31 +122,21 @@ fn compute_force(system: &mut System, e: f32, s: f32) {
     let s2: f32 = s * s;
 
     for i in 0..system.n {
-        let xi: f32 = system.r[i][0];
-        let yi: f32 = system.r[i][1];
-        let zi: f32 = system.r[i][2];
+        let ri = system.r[i];
         for j in (i + 1)..system.n {
-            let mut dx: f32 = system.r[j][0] - xi;
-            let mut dy: f32 = system.r[j][1] - yi;
-            let mut dz: f32 = system.r[j][2] - zi;
-            dx -= system.b.x * (dx / system.b.x).round();
-            dy -= system.b.y * (dy / system.b.y).round();
-            dz -= system.b.z * (dz / system.b.z).round();
+            let mut dr = system.r[j] - ri;
+            let offset = dr.component_div(&system.b).map(|x| x.round());
+            dr -= system.b.component_mul(&offset);
 
-            let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
+            let r2: f32 = 1.0 / dr.norm_squared();
             let c2: f32 = s2 * r2;
             let c4: f32 = c2 * c2;
             let c6: f32 = c4 * c2;
 
             let force: f32 = 48.0 * e * c6 * (c6 - 0.5) * r2;
 
-            system.f[i][0] -= force * dx;
-            system.f[i][1] -= force * dy;
-            system.f[i][2] -= force * dz;
-
-            system.f[j][0] += force * dx;
-            system.f[j][1] += force * dy;
-            system.f[j][2] += force * dz;
+            system.f[i] -= force * dr;
+            system.f[j] += force * dr;
         }
     }
 }
@@ -168,18 +146,13 @@ fn compute_potential_energy(system: &System, e: f32, s: f32) -> f64 {
     let s2: f32 = s * s;
 
     for i in 0..system.n {
-        let xi: f32 = system.r[i][0];
-        let yi: f32 = system.r[i][1];
-        let zi: f32 = system.r[i][2];
+        let ri = system.r[i];
         for rj in system.r.iter().skip(i + 1) {
-            let mut dx: f32 = rj[0] - xi;
-            let mut dy: f32 = rj[1] - yi;
-            let mut dz: f32 = rj[2] - zi;
-            dx -= system.b.x * (dx / system.b.x).round();
-            dy -= system.b.y * (dy / system.b.y).round();
-            dz -= system.b.z * (dz / system.b.z).round();
+            let mut dr = rj - ri;
+            let offset = dr.component_div(&system.b).map(|x| x.round());
+            dr -= system.b.component_mul(&offset);
 
-            let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
+            let r2: f32 = 1.0 / dr.norm_squared();
             let c2: f32 = s2 * r2;
             let c4: f32 = c2 * c2;
             let c6: f32 = c4 * c2;
@@ -197,18 +170,13 @@ fn compute_virial(system: &System, e: f32, s: f32) -> f64 {
     let s2: f32 = s * s;
 
     for i in 0..system.n {
-        let xi: f32 = system.r[i][0];
-        let yi: f32 = system.r[i][1];
-        let zi: f32 = system.r[i][2];
+        let ri = system.r[i];
         for rj in system.r.iter().skip(i + 1) {
-            let mut dx: f32 = rj[0] - xi;
-            let mut dy: f32 = rj[1] - yi;
-            let mut dz: f32 = rj[2] - zi;
-            dx -= system.b.x * (dx / system.b.x).round();
-            dy -= system.b.y * (dy / system.b.y).round();
-            dz -= system.b.z * (dz / system.b.z).round();
+            let mut dr = rj - ri;
+            let offset = dr.component_div(&system.b).map(|x| x.round());
+            dr -= system.b.component_mul(&offset);
 
-            let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
+            let r2: f32 = 1.0 / dr.norm_squared();
             let c2: f32 = s2 * r2;
             let c4: f32 = c2 * c2;
             let c6: f32 = c4 * c2;
@@ -227,11 +195,7 @@ fn compute_kinetic_energy(system: &System) -> f64 {
     let mut kinetic_energy: f64 = 0.0;
 
     for i in 0..system.n {
-        let vx2: f32 = system.v[i][0] * system.v[i][0];
-        let vy2: f32 = system.v[i][1] * system.v[i][1];
-        let vz2: f32 = system.v[i][2] * system.v[i][2];
-
-        let energy: f32 = 0.5_f32 * system.m[i] * (vx2 + vy2 + vz2);
+        let energy: f32 = 0.5_f32 * system.m[i] * system.v[i].dot(&system.v[i]);
         kinetic_energy += energy as f64;
     }
 
@@ -267,24 +231,18 @@ fn initialize_velocities(system: &mut System, temperature: f64, rng: &mut StdRng
 }
 
 fn remove_v_com(system: &mut System) {
-    let mut v_com: [f32; 3] = [0.0; 3];
+    let mut v_com: Vector3<f32> = Vector3::zeros();
     let mut m_tot: f32 = 0.0;
 
     for i in 0..system.n {
-        v_com[0] += system.m[i] * system.v[i][0];
-        v_com[1] += system.m[i] * system.v[i][1];
-        v_com[2] += system.m[i] * system.v[i][2];
+        v_com += system.m[i] * system.v[i];
         m_tot += system.m[i];
     }
 
-    v_com[0] /= m_tot;
-    v_com[1] /= m_tot;
-    v_com[2] /= m_tot;
+    v_com /= m_tot;
 
     for v in system.v.iter_mut() {
-        v[0] -= v_com[0];
-        v[1] -= v_com[1];
-        v[2] -= v_com[2];
+        *v -= v_com;
     }
 }
 
@@ -581,16 +539,16 @@ fn main() {
     let s: f32 = 0.340;
     let mut system = SystemBuilder::new()
         .n(n)
-        .b(Boundary::new(
+        .b(Vector3::new(
             config.boundary.length_x,
             config.boundary.length_y,
             config.boundary.length_z,
         ))
         .m(vec![39.948; n])
         .q(vec![0.0; n])
-        .r(vec![[0.0; 3]; n])
-        .v(vec![[0.0; 3]; n])
-        .f(vec![[0.0; 3]; n])
+        .r(vec![Vector3::zeros(); n])
+        .v(vec![Vector3::zeros(); n])
+        .f(vec![Vector3::zeros(); n])
         .build();
     let dof: u32 = 3 * system.n as u32 - 3;
 
@@ -671,27 +629,18 @@ fn main() {
         //**************************************
 
         for i in 0..system.n {
-            system.r[i][0] += system.v[i][0] * dt_half;
-            system.r[i][1] += system.v[i][1] * dt_half;
-            system.r[i][2] += system.v[i][2] * dt_half;
+            system.r[i] += system.v[i] * dt_half;
         }
 
         for f in system.f.iter_mut() {
-            f[0] = 0.0;
-            f[1] = 0.0;
-            f[2] = 0.0;
+            f.fill(0.0);
         }
 
         compute_force(&mut system, e, s);
 
         for i in 0..system.n {
-            system.v[i][0] += system.f[i][0] * dt / system.m[i];
-            system.v[i][1] += system.f[i][1] * dt / system.m[i];
-            system.v[i][2] += system.f[i][2] * dt / system.m[i];
-
-            system.r[i][0] += system.v[i][0] * dt_half;
-            system.r[i][1] += system.v[i][1] * dt_half;
-            system.r[i][2] += system.v[i][2] * dt_half;
+            system.v[i] += system.f[i] * dt / system.m[i];
+            system.r[i] += system.v[i] * dt_half;
         }
 
         if step % rem_com_freq == 0 {
