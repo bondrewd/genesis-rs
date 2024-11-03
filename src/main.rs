@@ -11,20 +11,139 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-fn compute_force(r: &[[f32; 4]], f: &mut [[f32; 3]], e: f32, s: f32, b: [f32; 3]) {
+#[derive(Debug)]
+struct Boundary {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl Boundary {
+    fn new(x: f32, y: f32, z: f32) -> Self {
+        Boundary { x, y, z }
+    }
+}
+
+#[derive(Debug)]
+struct System {
+    n: usize,
+    b: Boundary,
+    m: Vec<f32>,
+    q: Vec<f32>,
+    r: Vec<[f32; 3]>,
+    v: Vec<[f32; 3]>,
+    f: Vec<[f32; 3]>,
+}
+
+impl System {
+    pub fn new(
+        n: usize,
+        b: Boundary,
+        m: Vec<f32>,
+        q: Vec<f32>,
+        r: Vec<[f32; 3]>,
+        v: Vec<[f32; 3]>,
+        f: Vec<[f32; 3]>,
+    ) -> Self {
+        System {
+            n,
+            b,
+            m,
+            q,
+            r,
+            v,
+            f,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SystemBuilder {
+    n: Option<usize>,
+    b: Option<Boundary>,
+    m: Option<Vec<f32>>,
+    q: Option<Vec<f32>>,
+    r: Option<Vec<[f32; 3]>>,
+    v: Option<Vec<[f32; 3]>>,
+    f: Option<Vec<[f32; 3]>>,
+}
+
+impl SystemBuilder {
+    pub fn new() -> Self {
+        SystemBuilder::default()
+    }
+
+    pub fn n(mut self, n: usize) -> Self {
+        self.n = Some(n);
+        self
+    }
+
+    pub fn b(mut self, b: Boundary) -> Self {
+        self.b = Some(b);
+        self
+    }
+
+    pub fn m(mut self, m: Vec<f32>) -> Self {
+        self.m = Some(m);
+        self
+    }
+
+    pub fn q(mut self, q: Vec<f32>) -> Self {
+        self.q = Some(q);
+        self
+    }
+
+    pub fn r(mut self, r: Vec<[f32; 3]>) -> Self {
+        self.r = Some(r);
+        self
+    }
+
+    pub fn v(mut self, v: Vec<[f32; 3]>) -> Self {
+        self.v = Some(v);
+        self
+    }
+
+    pub fn f(mut self, f: Vec<[f32; 3]>) -> Self {
+        self.f = Some(f);
+        self
+    }
+
+    pub fn build(self) -> System {
+        let n = self.n.expect("n is required");
+        let b = self.b.expect("b is required");
+        let m = self.m.expect("m is required");
+        let q = self.q.expect("q is required");
+        let r = self.r.expect("r is required");
+        let v = self.v.expect("v is required");
+        let f = self.f.expect("f is required");
+
+        assert!(n == m.len());
+        assert!(n == q.len());
+        assert!(n == r.len());
+        assert!(n == v.len());
+        assert!(n == f.len());
+        assert!(b.x > 0.0);
+        assert!(b.y > 0.0);
+        assert!(b.z > 0.0);
+
+        System::new(n, b, m, q, r, v, f)
+    }
+}
+
+fn compute_force(system: &mut System, e: f32, s: f32) {
     let s2: f32 = s * s;
 
-    for i in 0..r.len() {
-        let xi: f32 = r[i][0];
-        let yi: f32 = r[i][1];
-        let zi: f32 = r[i][2];
-        for j in (i + 1)..r.len() {
-            let mut dx: f32 = r[j][0] - xi;
-            let mut dy: f32 = r[j][1] - yi;
-            let mut dz: f32 = r[j][2] - zi;
-            dx -= b[0] * (dx / b[0]).round();
-            dy -= b[1] * (dy / b[1]).round();
-            dz -= b[2] * (dz / b[2]).round();
+    for i in 0..system.n {
+        let xi: f32 = system.r[i][0];
+        let yi: f32 = system.r[i][1];
+        let zi: f32 = system.r[i][2];
+        for j in (i + 1)..system.n {
+            let mut dx: f32 = system.r[j][0] - xi;
+            let mut dy: f32 = system.r[j][1] - yi;
+            let mut dz: f32 = system.r[j][2] - zi;
+            dx -= system.b.x * (dx / system.b.x).round();
+            dy -= system.b.y * (dy / system.b.y).round();
+            dz -= system.b.z * (dz / system.b.z).round();
 
             let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
             let c2: f32 = s2 * r2;
@@ -33,32 +152,32 @@ fn compute_force(r: &[[f32; 4]], f: &mut [[f32; 3]], e: f32, s: f32, b: [f32; 3]
 
             let force: f32 = 48.0 * e * c6 * (c6 - 0.5) * r2;
 
-            f[i][0] -= force * dx;
-            f[i][1] -= force * dy;
-            f[i][2] -= force * dz;
+            system.f[i][0] -= force * dx;
+            system.f[i][1] -= force * dy;
+            system.f[i][2] -= force * dz;
 
-            f[j][0] += force * dx;
-            f[j][1] += force * dy;
-            f[j][2] += force * dz;
+            system.f[j][0] += force * dx;
+            system.f[j][1] += force * dy;
+            system.f[j][2] += force * dz;
         }
     }
 }
 
-fn compute_potential_energy(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 {
+fn compute_potential_energy(system: &System, e: f32, s: f32) -> f64 {
     let mut potential_energy: f64 = 0.0;
     let s2: f32 = s * s;
 
-    for i in 0..r.len() {
-        let xi: f32 = r[i][0];
-        let yi: f32 = r[i][1];
-        let zi: f32 = r[i][2];
-        for rj in r.iter().skip(i + 1) {
+    for i in 0..system.n {
+        let xi: f32 = system.r[i][0];
+        let yi: f32 = system.r[i][1];
+        let zi: f32 = system.r[i][2];
+        for rj in system.r.iter().skip(i + 1) {
             let mut dx: f32 = rj[0] - xi;
             let mut dy: f32 = rj[1] - yi;
             let mut dz: f32 = rj[2] - zi;
-            dx -= b[0] * (dx / b[0]).round();
-            dy -= b[1] * (dy / b[1]).round();
-            dz -= b[2] * (dz / b[2]).round();
+            dx -= system.b.x * (dx / system.b.x).round();
+            dy -= system.b.y * (dy / system.b.y).round();
+            dz -= system.b.z * (dz / system.b.z).round();
 
             let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
             let c2: f32 = s2 * r2;
@@ -73,21 +192,21 @@ fn compute_potential_energy(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 
     potential_energy // kJ/mol
 }
 
-fn compute_virial(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 {
+fn compute_virial(system: &System, e: f32, s: f32) -> f64 {
     let mut total_virial: f64 = 0.0;
     let s2: f32 = s * s;
 
-    for i in 0..r.len() {
-        let xi: f32 = r[i][0];
-        let yi: f32 = r[i][1];
-        let zi: f32 = r[i][2];
-        for rj in r.iter().skip(i + 1) {
+    for i in 0..system.n {
+        let xi: f32 = system.r[i][0];
+        let yi: f32 = system.r[i][1];
+        let zi: f32 = system.r[i][2];
+        for rj in system.r.iter().skip(i + 1) {
             let mut dx: f32 = rj[0] - xi;
             let mut dy: f32 = rj[1] - yi;
             let mut dz: f32 = rj[2] - zi;
-            dx -= b[0] * (dx / b[0]).round();
-            dy -= b[1] * (dy / b[1]).round();
-            dz -= b[2] * (dz / b[2]).round();
+            dx -= system.b.x * (dx / system.b.x).round();
+            dy -= system.b.y * (dy / system.b.y).round();
+            dz -= system.b.z * (dz / system.b.z).round();
 
             let r2: f32 = 1.0 / (dx * dx + dy * dy + dz * dz);
             let c2: f32 = s2 * r2;
@@ -104,15 +223,15 @@ fn compute_virial(r: &[[f32; 4]], e: f32, s: f32, b: [f32; 3]) -> f64 {
     total_virial
 }
 
-fn compute_kinetic_energy(v: &[[f32; 3]], m: &[f32]) -> f64 {
+fn compute_kinetic_energy(system: &System) -> f64 {
     let mut kinetic_energy: f64 = 0.0;
 
-    for i in 0..v.len() {
-        let vx2: f32 = v[i][0] * v[i][0];
-        let vy2: f32 = v[i][1] * v[i][1];
-        let vz2: f32 = v[i][2] * v[i][2];
+    for i in 0..system.n {
+        let vx2: f32 = system.v[i][0] * system.v[i][0];
+        let vy2: f32 = system.v[i][1] * system.v[i][1];
+        let vz2: f32 = system.v[i][2] * system.v[i][2];
 
-        let energy: f32 = 0.5_f32 * m[i] * (vx2 + vy2 + vz2);
+        let energy: f32 = 0.5_f32 * system.m[i] * (vx2 + vy2 + vz2);
         kinetic_energy += energy as f64;
     }
 
@@ -125,8 +244,8 @@ fn compute_temperature(kinetic_energy: f64, dof: u32) -> f64 {
     temperature
 }
 
-fn compute_volume(b: [f32; 3]) -> f64 {
-    (b[0] * b[1] * b[2]) as f64
+fn compute_volume(system: &System) -> f64 {
+    (system.b.x * system.b.y * system.b.z) as f64
 }
 
 fn compute_pressure(virial: f64, temperature: f64, volume: f64, dof: u32) -> f64 {
@@ -135,37 +254,37 @@ fn compute_pressure(virial: f64, temperature: f64, volume: f64, dof: u32) -> f64
     pressure
 }
 
-fn initialize_velocities(v: &mut [[f32; 3]], m: &[f32], temperature: f64, rng: &mut StdRng) {
+fn initialize_velocities(system: &mut System, temperature: f64, rng: &mut StdRng) {
     let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
 
-    for i in 0..v.len() {
-        let sigma: f64 = (boltzmann * temperature / m[i] as f64).sqrt();
+    for i in 0..system.n {
+        let sigma: f64 = (boltzmann * temperature / system.m[i] as f64).sqrt();
         let normal_dist = Normal::new(0.0, sigma).unwrap();
-        v[i][0] = normal_dist.sample(rng) as f32;
-        v[i][1] = normal_dist.sample(rng) as f32;
-        v[i][2] = normal_dist.sample(rng) as f32;
+        system.v[i][0] = normal_dist.sample(rng) as f32;
+        system.v[i][1] = normal_dist.sample(rng) as f32;
+        system.v[i][2] = normal_dist.sample(rng) as f32;
     }
 }
 
-fn remove_v_com(v: &mut [[f32; 3]], m: &[f32]) {
+fn remove_v_com(system: &mut System) {
     let mut v_com: [f32; 3] = [0.0; 3];
     let mut m_tot: f32 = 0.0;
 
-    for i in 0..v.len() {
-        v_com[0] += m[i] * v[i][0];
-        v_com[1] += m[i] * v[i][1];
-        v_com[2] += m[i] * v[i][2];
-        m_tot += m[i];
+    for i in 0..system.n {
+        v_com[0] += system.m[i] * system.v[i][0];
+        v_com[1] += system.m[i] * system.v[i][1];
+        v_com[2] += system.m[i] * system.v[i][2];
+        m_tot += system.m[i];
     }
 
     v_com[0] /= m_tot;
     v_com[1] /= m_tot;
     v_com[2] /= m_tot;
 
-    for vi in v.iter_mut() {
-        vi[0] -= v_com[0];
-        vi[1] -= v_com[1];
-        vi[2] -= v_com[2];
+    for v in system.v.iter_mut() {
+        v[0] -= v_com[0];
+        v[1] -= v_com[1];
+        v[2] -= v_com[2];
     }
 }
 
@@ -193,16 +312,16 @@ fn display_output(
     );
 }
 
-fn write_xyz_frame(file: &mut File, coordinates: &[[f32; 4]]) -> io::Result<()> {
+fn write_xyz_frame(file: &mut File, system: &System) -> io::Result<()> {
     // Write the number of atoms (coordinates) at the top of the file
-    writeln!(file, "{}", coordinates.len())?;
+    writeln!(file, "{}", system.n)?;
 
     // Write a comment line (can be empty or hold some metadata)
     writeln!(file, "XYZ file generated by genesis-rs")?;
 
     // Write each coordinate with an atom type (e.g., "C" for carbon in this example)
-    for coord in coordinates {
-        writeln!(file, "Ar {:.6} {:.6} {:.6}", coord[0], coord[1], coord[2])?;
+    for r in system.r.iter() {
+        writeln!(file, "Ar {:.6} {:.6} {:.6}", r[0], r[1], r[2])?;
     }
 
     Ok(())
@@ -277,28 +396,28 @@ fn write_dcd_header(file: &mut File, header: &DcdHeader) -> io::Result<()> {
     Ok(())
 }
 
-fn write_dcd_frame(file: &mut File, r: &[[f32; 4]], b: [f32; 3]) -> io::Result<()> {
+fn write_dcd_frame(file: &mut File, system: &System) -> io::Result<()> {
     // Block size start
     file.write_u32::<LittleEndian>(48)?;
     // Write X coordinates
-    file.write_f64::<LittleEndian>(b[0] as f64)?;
+    file.write_f64::<LittleEndian>(system.b.x as f64)?;
     file.write_f64::<LittleEndian>(0.0)?;
-    file.write_f64::<LittleEndian>(b[1] as f64)?;
+    file.write_f64::<LittleEndian>(system.b.y as f64)?;
     file.write_f64::<LittleEndian>(0.0)?;
     file.write_f64::<LittleEndian>(0.0)?;
-    file.write_f64::<LittleEndian>(b[2] as f64)?;
+    file.write_f64::<LittleEndian>(system.b.z as f64)?;
     // Block size end
     file.write_u32::<LittleEndian>(48)?;
 
     // For each frame, DCD stores X, Y, and Z coordinates in separate chunks
-    let block_size = r.len() as u32 * 4;
+    let block_size = system.n as u32 * 4;
 
     // Write X coordinates
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in r {
-        file.write_f32::<LittleEndian>(coord[0])?;
+    for r in system.r.iter() {
+        file.write_f32::<LittleEndian>(r[0])?;
     }
     // Block size end
     file.write_u32::<LittleEndian>(block_size)?;
@@ -307,8 +426,8 @@ fn write_dcd_frame(file: &mut File, r: &[[f32; 4]], b: [f32; 3]) -> io::Result<(
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in r {
-        file.write_f32::<LittleEndian>(coord[1])?;
+    for r in system.r.iter() {
+        file.write_f32::<LittleEndian>(r[1])?;
     }
     // Block size end
     file.write_u32::<LittleEndian>(block_size)?;
@@ -317,8 +436,8 @@ fn write_dcd_frame(file: &mut File, r: &[[f32; 4]], b: [f32; 3]) -> io::Result<(
     // Block size start
     file.write_u32::<LittleEndian>(block_size)?;
     // Write X coordinates
-    for coord in r {
-        file.write_f32::<LittleEndian>(coord[2])?;
+    for r in system.r.iter() {
+        file.write_f32::<LittleEndian>(r[2])?;
     }
     // Block size end
     file.write_u32::<LittleEndian>(block_size)?;
@@ -336,14 +455,14 @@ struct Args {
 
 /// Struct to represent the "output" section in the TOML file
 #[derive(Debug, Deserialize)]
-struct Output {
+struct OutputConfig {
     out_xyz_path: String,
     out_dcd_path: String,
 }
 
 /// Struct to represent the "dynamics" section in the TOML file
 #[derive(Debug, Deserialize)]
-struct Dynamics {
+struct DynamicsConfig {
     time_step: f32,
     num_steps: u32,
     temperature: f64,
@@ -351,7 +470,7 @@ struct Dynamics {
 
 /// Struct to represent the "boundary" section in the TOML file
 #[derive(Debug, Deserialize)]
-struct Boundary {
+struct BoundaryConfig {
     length_x: f32,
     length_y: f32,
     length_z: f32,
@@ -360,9 +479,9 @@ struct Boundary {
 /// Main config struct combining all sections
 #[derive(Debug, Deserialize)]
 struct Config {
-    output: Output,
-    dynamics: Dynamics,
-    boundary: Boundary,
+    output: OutputConfig,
+    dynamics: DynamicsConfig,
+    boundary: BoundaryConfig,
 }
 
 /// Expand `~` to the home directory
@@ -460,29 +579,36 @@ fn main() {
     let n: usize = 100;
     let e: f32 = 1.003;
     let s: f32 = 0.340;
-    let b: [f32; 3] = [
-        config.boundary.length_x,
-        config.boundary.length_y,
-        config.boundary.length_z,
-    ];
-    let dof: u32 = 3 * n as u32 - 3;
-    let m: Vec<f32> = vec![39.948; n];
-    let mut r: Vec<[f32; 4]> = vec![[0.0; 4]; n];
-    let mut v: Vec<[f32; 3]> = vec![[0.0; 3]; n];
-    let mut f: Vec<[f32; 3]> = vec![[0.0; 3]; n];
+    let mut system = SystemBuilder::new()
+        .n(n)
+        .b(Boundary::new(
+            config.boundary.length_x,
+            config.boundary.length_y,
+            config.boundary.length_z,
+        ))
+        .m(vec![39.948; n])
+        .q(vec![0.0; n])
+        .r(vec![[0.0; 3]; n])
+        .v(vec![[0.0; 3]; n])
+        .f(vec![[0.0; 3]; n])
+        .build();
+    let dof: u32 = 3 * system.n as u32 - 3;
 
     let mut rng: StdRng = StdRng::seed_from_u64(0);
 
-    for ri in r.iter_mut() {
-        ri[0] = rng.gen_range(0.0..b[0]);
-        ri[1] = rng.gen_range(0.0..b[1]);
-        ri[2] = rng.gen_range(0.0..b[2]);
-        ri[3] = rng.gen_range(-1.0..1.0);
+    for r in system.r.iter_mut() {
+        r[0] = rng.gen_range(0.0..system.b.x);
+        r[1] = rng.gen_range(0.0..system.b.y);
+        r[2] = rng.gen_range(0.0..system.b.z);
+    }
+
+    for q in system.q.iter_mut() {
+        *q = rng.gen_range(-1.0..1.0);
     }
 
     let target_temperature: f64 = config.dynamics.temperature;
-    initialize_velocities(&mut v, &m, target_temperature, &mut rng);
-    remove_v_com(&mut v, &m);
+    initialize_velocities(&mut system, target_temperature, &mut rng);
+    remove_v_com(&mut system);
 
     let out_ene_freq: u32 = 1000;
     let out_dcd_freq: u32 = 10;
@@ -514,12 +640,12 @@ fn main() {
     //**************************************
 
     display_output_header();
-    let mut potential_energy: f64 = compute_potential_energy(&r, e, s, b);
-    let mut kinetic_energy: f64 = compute_kinetic_energy(&v, &m);
+    let mut potential_energy: f64 = compute_potential_energy(&system, e, s);
+    let mut kinetic_energy: f64 = compute_kinetic_energy(&system);
     let mut total_energy: f64 = potential_energy + kinetic_energy;
     let mut temperature: f64 = compute_temperature(kinetic_energy, dof);
-    let mut virial: f64 = compute_virial(&r, e, s, b);
-    let mut volume: f64 = compute_volume(b);
+    let mut virial: f64 = compute_virial(&system, e, s);
+    let mut volume: f64 = compute_volume(&system);
     let mut pressure: f64 = compute_pressure(virial, temperature, volume, dof);
     display_output(
         0,
@@ -533,7 +659,7 @@ fn main() {
     );
 
     write_dcd_header(&mut out_dcd_file, &header).expect("Failed to write DCD header");
-    write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
+    write_dcd_frame(&mut out_dcd_file, &system).expect("Failed to write DCD frame");
 
     //**************************************
     output_time += start.elapsed();
@@ -544,32 +670,32 @@ fn main() {
         let start = Instant::now();
         //**************************************
 
-        for i in 0..n {
-            r[i][0] += v[i][0] * dt_half;
-            r[i][1] += v[i][1] * dt_half;
-            r[i][2] += v[i][2] * dt_half;
+        for i in 0..system.n {
+            system.r[i][0] += system.v[i][0] * dt_half;
+            system.r[i][1] += system.v[i][1] * dt_half;
+            system.r[i][2] += system.v[i][2] * dt_half;
         }
 
-        for fi in f.iter_mut() {
-            fi[0] = 0.0;
-            fi[1] = 0.0;
-            fi[2] = 0.0;
+        for f in system.f.iter_mut() {
+            f[0] = 0.0;
+            f[1] = 0.0;
+            f[2] = 0.0;
         }
 
-        compute_force(&r, &mut f, e, s, b);
+        compute_force(&mut system, e, s);
 
-        for i in 0..n {
-            v[i][0] += f[i][0] * dt / m[i];
-            v[i][1] += f[i][1] * dt / m[i];
-            v[i][2] += f[i][2] * dt / m[i];
+        for i in 0..system.n {
+            system.v[i][0] += system.f[i][0] * dt / system.m[i];
+            system.v[i][1] += system.f[i][1] * dt / system.m[i];
+            system.v[i][2] += system.f[i][2] * dt / system.m[i];
 
-            r[i][0] += v[i][0] * dt_half;
-            r[i][1] += v[i][1] * dt_half;
-            r[i][2] += v[i][2] * dt_half;
+            system.r[i][0] += system.v[i][0] * dt_half;
+            system.r[i][1] += system.v[i][1] * dt_half;
+            system.r[i][2] += system.v[i][2] * dt_half;
         }
 
         if step % rem_com_freq == 0 {
-            remove_v_com(&mut v, &m);
+            remove_v_com(&mut system);
         }
 
         //**************************************
@@ -581,16 +707,16 @@ fn main() {
         //**************************************
 
         if step % out_dcd_freq == 0 {
-            write_dcd_frame(&mut out_dcd_file, &r, b).expect("Failed to write DCD frame");
+            write_dcd_frame(&mut out_dcd_file, &system).expect("Failed to write DCD frame");
         }
 
         if step % out_ene_freq == 0 {
-            potential_energy = compute_potential_energy(&r, e, s, b);
-            kinetic_energy = compute_kinetic_energy(&v, &m);
+            potential_energy = compute_potential_energy(&system, e, s);
+            kinetic_energy = compute_kinetic_energy(&system);
             total_energy = potential_energy + kinetic_energy;
             temperature = compute_temperature(kinetic_energy, dof);
-            virial = compute_virial(&r, e, s, b);
-            volume = compute_volume(b);
+            virial = compute_virial(&system, e, s);
+            volume = compute_volume(&system);
             pressure = compute_pressure(virial, temperature, volume, dof);
             display_output(
                 step,
@@ -613,7 +739,7 @@ fn main() {
     let start = Instant::now();
     //**************************************
 
-    write_xyz_frame(&mut out_xyz_file, &r).expect("Failed to write XYZ file");
+    write_xyz_frame(&mut out_xyz_file, &system).expect("Failed to write XYZ file");
 
     //**************************************
     output_time += start.elapsed();
