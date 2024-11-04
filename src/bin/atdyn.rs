@@ -1,15 +1,6 @@
 use clap::Parser;
 use dirs::home_dir;
-use genesis::observer::{
-    DegreesOfFreedomObserver, KineticEnergyObserver, PotentialEnergyObserver, PressureObserver,
-    TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
-};
-use genesis::reporter::csv::CSVReporter;
-use genesis::reporter::dcd::DCDReporter;
-use genesis::reporter::log::LOGReporter;
-use genesis::reporter::xyz::XYZReporter;
-use genesis::system::System;
-use genesis::timer::Timer;
+use genesis::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::Deserialize;
