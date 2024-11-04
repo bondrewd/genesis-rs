@@ -20,8 +20,8 @@ struct Args {
 /// Struct to represent the "output" section in the TOML file
 #[derive(Debug, Deserialize)]
 struct InputConfig {
-    mol_path: String,
     par_path: String,
+    mol_path: Option<String>,
     pos_path: Option<String>,
     vel_path: Option<String>,
     rst_path: Option<String>,
@@ -130,8 +130,8 @@ fn main() {
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));
 
     // Resolve input file paths
-    let inp_mol_path = resolve_path(&config.input.mol_path, config_dir);
     let inp_par_path = resolve_path(&config.input.par_path, config_dir);
+    let inp_mol_path = &config.input.mol_path.map(|p| resolve_path(p, config_dir));
     let inp_pos_path = &config.input.pos_path.map(|p| resolve_path(p, config_dir));
     let inp_vel_path = &config.input.vel_path.map(|p| resolve_path(p, config_dir));
     let inp_rst_path = &config.input.rst_path.map(|p| resolve_path(p, config_dir));
@@ -230,24 +230,33 @@ fn main() {
             );
 
             // Set the masses, charges
-            let mol_parser = match MolParser::with_path(inp_mol_path) {
-                Ok(parser) => parser,
-                Err(e) => {
-                    eprintln!("Failed to open MOL file: {}", e);
+            let builder = match inp_mol_path {
+                Some(mol_path) => {
+                    let mol_parser = match MolParser::with_path(mol_path) {
+                        Ok(parser) => parser,
+                        Err(e) => {
+                            eprintln!("Failed to open MOL file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    let parser_result = match mol_parser.parse() {
+                        Ok(parser_result) => parser_result,
+                        Err(e) => {
+                            eprintln!("Failed to parse MOL file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    builder
+                        .with_masses(parser_result.masses)
+                        .with_charges(parser_result.charges)
+                        .with_classes(parser_result.classes)
+                        .with_names(parser_result.names)
+                }
+                None => {
+                    eprintln!("Error: MOL file is required when no RST file is provided");
                     std::process::exit(1);
                 }
             };
-            let parser_result = match mol_parser.parse() {
-                Ok(parser_result) => parser_result,
-                Err(e) => {
-                    eprintln!("Failed to parse POS file: {}", e);
-                    std::process::exit(1);
-                }
-            };
-            let builder = builder.with_masses(parser_result.masses);
-            let builder = builder.with_charges(parser_result.charges);
-            let builder = builder.with_classes(parser_result.classes);
-            let builder = builder.with_names(parser_result.names);
 
             // Set the positions
             let builder = match inp_pos_path {
@@ -268,7 +277,10 @@ fn main() {
                     };
                     builder.with_positions(parser_result.positions)
                 }
-                None => builder,
+                None => {
+                    eprintln!("Error: POS file is required when no RST file is provided");
+                    std::process::exit(1);
+                }
             };
 
             // Set the velocities
@@ -294,12 +306,14 @@ fn main() {
             };
 
             // Build the system
-            builder.build()
+            let mut system = builder.build();
+
+            // Remove the center of mass velocity
+            system.remove_v_com();
+
+            system
         }
     };
-
-    // Remove the center of mass velocity
-    system.remove_v_com();
 
     // Observe degrees of freedom
     df_obs.observe(&system);
