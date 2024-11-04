@@ -1,8 +1,14 @@
 use clap::Parser;
 use dirs::home_dir;
-use genesis_rs::reporter::dcd::{DCDHeader, DCDReporter};
-use genesis_rs::reporter::xyz::XYZReporter;
-use genesis_rs::system::System;
+use genesis::observer::{
+    DegreesOfFreedomObserver, KineticEnergyObserver, PotentialEnergyObserver, PressureObserver,
+    TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
+};
+use genesis::reporter::csv::CSVReporter;
+use genesis::reporter::dcd::{DCDHeader, DCDReporter};
+use genesis::reporter::log::LOGReporter;
+use genesis::reporter::xyz::XYZReporter;
+use genesis::system::System;
 use nalgebra::Vector3;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -34,83 +40,6 @@ fn compute_force(system: &mut System, e: f32, s: f32) {
     }
 }
 
-fn compute_potential_energy(system: &System, e: f32, s: f32) -> f64 {
-    let mut potential_energy: f64 = 0.0;
-    let s2: f32 = s * s;
-
-    for i in 0..system.n {
-        let ri = system.r[i];
-        for rj in system.r.iter().skip(i + 1) {
-            let mut dr = rj - ri;
-            let offset = dr.component_div(&system.b).map(|x| x.round());
-            dr -= system.b.component_mul(&offset);
-
-            let r2: f32 = 1.0 / dr.norm_squared();
-            let c2: f32 = s2 * r2;
-            let c4: f32 = c2 * c2;
-            let c6: f32 = c4 * c2;
-
-            let energy: f32 = 4.0 * e * c6 * (c6 - 1.0);
-            potential_energy += energy as f64;
-        }
-    }
-
-    potential_energy // kJ/mol
-}
-
-fn compute_virial(system: &System, e: f32, s: f32) -> f64 {
-    let mut total_virial: f64 = 0.0;
-    let s2: f32 = s * s;
-
-    for i in 0..system.n {
-        let ri = system.r[i];
-        for rj in system.r.iter().skip(i + 1) {
-            let mut dr = rj - ri;
-            let offset = dr.component_div(&system.b).map(|x| x.round());
-            dr -= system.b.component_mul(&offset);
-
-            let r2: f32 = 1.0 / dr.norm_squared();
-            let c2: f32 = s2 * r2;
-            let c4: f32 = c2 * c2;
-            let c6: f32 = c4 * c2;
-
-            let force: f32 = 48.0 * e * c6 * (c6 - 0.5) * r2;
-
-            let virial: f32 = force / r2;
-            total_virial += virial as f64;
-        }
-    }
-
-    total_virial
-}
-
-fn compute_kinetic_energy(system: &System) -> f64 {
-    let mut kinetic_energy: f64 = 0.0;
-
-    for i in 0..system.n {
-        let energy: f32 = 0.5_f32 * system.m[i] * system.v[i].dot(&system.v[i]);
-        kinetic_energy += energy as f64;
-    }
-
-    kinetic_energy // kJ/mol
-}
-
-fn compute_temperature(kinetic_energy: f64, dof: u32) -> f64 {
-    let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
-    let temperature: f64 = 2.0 * kinetic_energy / (dof as f64 * boltzmann);
-    temperature
-}
-
-fn compute_volume(system: &System) -> f64 {
-    (system.b.x * system.b.y * system.b.z) as f64
-}
-
-fn compute_pressure(virial: f64, temperature: f64, volume: f64, dof: u32) -> f64 {
-    let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
-    let pressure: f64 = (virial + 3.0 * dof as f64 * boltzmann * temperature) / (3.0 * volume);
-    pressure
-}
-
 fn remove_v_com(system: &mut System) {
     let mut v_com: Vector3<f32> = Vector3::zeros();
     let mut m_tot: f32 = 0.0;
@@ -127,30 +56,6 @@ fn remove_v_com(system: &mut System) {
     }
 }
 
-fn display_output_header() {
-    println!(
-        "{:>10} {:>18} {:>18} {:>18} {:>18} {:>18} {:>18} {:>18}",
-        "Step", "Total", "Potential", "Kinetic", "Temperature", "Virial", "Volume", "Pressure",
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn display_output(
-    step: u32,
-    total_energy: f64,
-    potential_energy: f64,
-    kinetic_energy: f64,
-    temperature: f64,
-    virial: f64,
-    volume: f64,
-    pressure: f64,
-) {
-    println!(
-        "{:>10} {:>18.6} {:>18.6} {:>18.6} {:>18.6} {:>18.6} {:>18.6} {:>18.6}",
-        step, total_energy, potential_energy, kinetic_energy, temperature, virial, volume, pressure,
-    );
-}
-
 /// A simple program to initialize variables from a TOML file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -162,8 +67,10 @@ struct Args {
 /// Struct to represent the "output" section in the TOML file
 #[derive(Debug, Deserialize)]
 struct OutputConfig {
-    out_xyz_path: String,
+    out_csv_path: String,
     out_dcd_path: String,
+    out_log_path: String,
+    out_xyz_path: String,
 }
 
 /// Struct to represent the "dynamics" section in the TOML file
@@ -211,34 +118,6 @@ fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
     }
 }
 
-fn report_profile(
-    setup_time: Duration,
-    output_time: Duration,
-    dynamics_time: Duration,
-    total_time: Duration,
-) {
-    // Convert durations to seconds for easier formatting
-    let setup_secs = setup_time.as_secs_f64();
-    let output_secs = output_time.as_secs_f64();
-    let dynamics_secs = dynamics_time.as_secs_f64();
-    let total_secs = total_time.as_secs_f64();
-
-    // Calculate percentages
-    let setup_percent = (setup_secs / total_secs) * 100.0;
-    let output_percent = (output_secs / total_secs) * 100.0;
-    let dynamics_percent = (dynamics_secs / total_secs) * 100.0;
-
-    // Print the profile report
-    println!("Profile Report:");
-    println!("setup    = {:>5.1}% {:.3}s ", setup_percent, setup_secs);
-    println!("output   = {:>5.1}% {:.3}s ", output_percent, output_secs);
-    println!(
-        "dynamics = {:>5.1}% {:.3}s",
-        dynamics_percent, dynamics_secs
-    );
-    println!("total    = 100.0% {:.3}s", total_secs);
-}
-
 fn main() {
     // Variables to store the duration of each section
     let mut setup_time = Duration::new(0, 0);
@@ -275,12 +154,26 @@ fn main() {
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));
 
     // Resolve the output file paths
-    let out_xyz_path = resolve_path(&config.output.out_xyz_path, config_dir);
+    let out_csv_path = resolve_path(&config.output.out_csv_path, config_dir);
     let out_dcd_path = resolve_path(&config.output.out_dcd_path, config_dir);
+    let out_log_path = resolve_path(&config.output.out_log_path, config_dir);
+    let out_xyz_path = resolve_path(&config.output.out_xyz_path, config_dir);
 
     // Initialize writers
-    let mut xyz_reporter = XYZReporter::with_path(out_xyz_path).expect("Failed to create XYZ file");
+    let mut csv_reporter = CSVReporter::with_path(out_csv_path).expect("Failed to create CSV file");
     let mut dcd_reporter = DCDReporter::with_path(out_dcd_path).expect("Failed to create DCD file");
+    let mut log_reporter = LOGReporter::with_path(out_log_path).expect("Failed to create LOG file");
+    let mut xyz_reporter = XYZReporter::with_path(out_xyz_path).expect("Failed to create XYZ file");
+
+    // Initialize observers
+    let mut et_obs = TotalEnergyObserver::new();
+    let mut ue_obs = PotentialEnergyObserver::new();
+    let mut ke_obs = KineticEnergyObserver::new();
+    let mut te_obs = TemperatureObserver::new();
+    let mut vi_obs = VirialObserver::new();
+    let mut vo_obs = VolumeObserver::new();
+    let mut pr_obs = PressureObserver::new();
+    let mut df_obs = DegreesOfFreedomObserver::new();
 
     let mut rng: StdRng = StdRng::seed_from_u64(0);
 
@@ -299,7 +192,9 @@ fn main() {
         .with_random_positions(&mut rng)
         .with_random_velocities(config.dynamics.temperature, &mut rng)
         .build();
-    let dof: u32 = 3 * system.n as u32 - 3;
+
+    // Observe degrees of freedom
+    df_obs.observe(&system);
 
     remove_v_com(&mut system);
 
@@ -327,31 +222,28 @@ fn main() {
     let start = Instant::now();
     //**************************************
 
-    display_output_header();
-    let mut potential_energy: f64 = compute_potential_energy(&system, e, s);
-    let mut kinetic_energy: f64 = compute_kinetic_energy(&system);
-    let mut total_energy: f64 = potential_energy + kinetic_energy;
-    let mut temperature: f64 = compute_temperature(kinetic_energy, dof);
-    let mut virial: f64 = compute_virial(&system, e, s);
-    let mut volume: f64 = compute_volume(&system);
-    let mut pressure: f64 = compute_pressure(virial, temperature, volume, dof);
-    display_output(
-        0,
-        total_energy,
-        potential_energy,
-        kinetic_energy,
-        temperature,
-        virial,
-        volume,
-        pressure,
-    );
-
     dcd_reporter
         .write_header(DCDHeader::new(n as u32, n_steps / out_dcd_freq + 1))
         .expect("Failed to write DCD header");
     dcd_reporter
-        .write_dcd_frame(&system)
+        .write_report(&system)
         .expect("Failed to write DCD frame");
+    csv_reporter
+        .write_header()
+        .expect("Failed to write CSV header");
+
+    ke_obs.observe(&system);
+    ue_obs.observe(&system, e, s);
+    et_obs.observe(&ke_obs, &ue_obs);
+    te_obs.observe(&ke_obs, &df_obs);
+    vi_obs.observe(&system, e, s);
+    vo_obs.observe(&system);
+    pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
+    csv_reporter
+        .write_report(
+            0, &et_obs, &ue_obs, &ke_obs, &te_obs, &vi_obs, &vo_obs, &pr_obs,
+        )
+        .expect("Failed to write CSV frame");
 
     //**************************************
     output_time += start.elapsed();
@@ -391,28 +283,23 @@ fn main() {
 
         if step % out_dcd_freq == 0 {
             dcd_reporter
-                .write_dcd_frame(&system)
+                .write_report(&system)
                 .expect("Failed to write DCD frame");
         }
 
         if step % out_ene_freq == 0 {
-            potential_energy = compute_potential_energy(&system, e, s);
-            kinetic_energy = compute_kinetic_energy(&system);
-            total_energy = potential_energy + kinetic_energy;
-            temperature = compute_temperature(kinetic_energy, dof);
-            virial = compute_virial(&system, e, s);
-            volume = compute_volume(&system);
-            pressure = compute_pressure(virial, temperature, volume, dof);
-            display_output(
-                step,
-                total_energy,
-                potential_energy,
-                kinetic_energy,
-                temperature,
-                virial,
-                volume,
-                pressure,
-            );
+            ke_obs.observe(&system);
+            ue_obs.observe(&system, e, s);
+            et_obs.observe(&ke_obs, &ue_obs);
+            te_obs.observe(&ke_obs, &df_obs);
+            vi_obs.observe(&system, e, s);
+            vo_obs.observe(&system);
+            pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
+            csv_reporter
+                .write_report(
+                    step, &et_obs, &ue_obs, &ke_obs, &te_obs, &vi_obs, &vo_obs, &pr_obs,
+                )
+                .expect("Failed to write CSV frame");
         }
 
         //**************************************
@@ -425,7 +312,7 @@ fn main() {
     //**************************************
 
     xyz_reporter
-        .write_frame(&system)
+        .write_report(&system)
         .expect("Failed to write XYZ frame");
 
     //**************************************
@@ -436,5 +323,7 @@ fn main() {
     let total_time = setup_time + output_time + dynamics_time;
 
     // Report the results
-    report_profile(setup_time, output_time, dynamics_time, total_time);
+    log_reporter
+        .write_report(setup_time, output_time, dynamics_time, total_time)
+        .expect("Failed to write LOG report");
 }

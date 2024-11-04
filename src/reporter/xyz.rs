@@ -18,7 +18,7 @@ impl XYZReporter {
         Ok(XYZReporter::new(file))
     }
 
-    pub fn write_frame(&mut self, system: &System) -> io::Result<()> {
+    pub fn write_report(&mut self, system: &System) -> io::Result<()> {
         // Init buffer
         let mut buffer = Vec::new();
 

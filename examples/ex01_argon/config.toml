@@ -1,6 +1,8 @@
 [output]
-out_xyz_path = "out.xyz"
+out_csv_path = "out.csv"
 out_dcd_path = "out.dcd"
+out_log_path = "out.log"
+out_xyz_path = "out.xyz"
 
 [dynamics]
 time_step = 0.001

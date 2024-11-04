@@ -12,3 +12,7 @@ rand = "0.8.5"
 rand_distr = "0.4.3"
 serde = { version = "1.0.210", features = ["derive"] }
 toml = "0.8.19"
+
+[lib]
+name = "genesis"
+path = "src/lib.rs"

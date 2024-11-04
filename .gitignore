@@ -1,3 +1,5 @@
 /target
-*.xyz
+*.csv
 *.dcd
+*.log
+*.xyz

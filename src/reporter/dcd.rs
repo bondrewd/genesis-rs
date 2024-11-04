@@ -105,7 +105,7 @@ impl DCDReporter {
         Ok(())
     }
 
-    pub fn write_dcd_frame(&mut self, system: &System) -> io::Result<()> {
+    pub fn write_report(&mut self, system: &System) -> io::Result<()> {
         // Check if the header has been written
         if !self.header_flag {
             return Err(io::Error::new(
