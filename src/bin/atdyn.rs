@@ -9,13 +9,13 @@ use genesis::reporter::dcd::{DCDHeader, DCDReporter};
 use genesis::reporter::log::LOGReporter;
 use genesis::reporter::xyz::XYZReporter;
 use genesis::system::System;
+use genesis::timer::Timer;
 use nalgebra::Vector3;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 fn compute_force(system: &mut System, e: f32, s: f32) {
     let s2: f32 = s * s;
@@ -119,13 +119,19 @@ fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
 }
 
 fn main() {
-    // Variables to store the duration of each section
-    let mut setup_time = Duration::new(0, 0);
-    let mut output_time = Duration::new(0, 0);
-    let mut dynamics_time = Duration::new(0, 0);
+    // Initialize global timer
+    let mut global_timer = Timer::default();
+    ////////////////////////////////////////
+    global_timer.start();
+    //**************************************
+
+    // Initialize section timers
+    let mut setup_timer = Timer::default();
+    let mut output_timer = Timer::default();
+    let mut dynamics_timer = Timer::default();
 
     ////////////////////////////////////////
-    let start = Instant::now();
+    setup_timer.start();
     //**************************************
 
     // Parse command-line arguments
@@ -215,11 +221,11 @@ fn main() {
     let n_steps: u32 = config.dynamics.num_steps;
 
     //**************************************
-    setup_time += start.elapsed();
+    setup_timer.stop();
     ////////////////////////////////////////
 
     ////////////////////////////////////////
-    let start = Instant::now();
+    output_timer.start();
     //**************************************
 
     dcd_reporter
@@ -246,12 +252,12 @@ fn main() {
         .expect("Failed to write CSV frame");
 
     //**************************************
-    output_time += start.elapsed();
+    output_timer.stop();
     ////////////////////////////////////////
 
     for step in 1..=n_steps {
         ////////////////////////////////////////
-        let start = Instant::now();
+        dynamics_timer.start();
         //**************************************
 
         for i in 0..system.n {
@@ -274,11 +280,11 @@ fn main() {
         }
 
         //**************************************
-        dynamics_time += start.elapsed();
+        dynamics_timer.stop();
         ////////////////////////////////////////
 
         ////////////////////////////////////////
-        let start = Instant::now();
+        output_timer.start();
         //**************************************
 
         if step % out_dcd_freq == 0 {
@@ -303,12 +309,12 @@ fn main() {
         }
 
         //**************************************
-        output_time += start.elapsed();
+        output_timer.stop();
         ////////////////////////////////////////
     }
 
     ////////////////////////////////////////
-    let start = Instant::now();
+    output_timer.start();
     //**************************************
 
     xyz_reporter
@@ -316,14 +322,20 @@ fn main() {
         .expect("Failed to write XYZ frame");
 
     //**************************************
-    output_time += start.elapsed();
+    output_timer.stop();
     ////////////////////////////////////////
 
-    // Calculate total time
-    let total_time = setup_time + output_time + dynamics_time;
+    //**************************************
+    global_timer.stop();
+    ////////////////////////////////////////
 
     // Report the results
     log_reporter
-        .write_report(setup_time, output_time, dynamics_time, total_time)
+        .write_report(
+            setup_timer.elapsed(),
+            output_timer.elapsed(),
+            dynamics_timer.elapsed(),
+            global_timer.elapsed(),
+        )
         .expect("Failed to write LOG report");
 }
