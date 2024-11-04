@@ -5,7 +5,7 @@ use genesis::observer::{
     TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
 };
 use genesis::reporter::csv::CSVReporter;
-use genesis::reporter::dcd::{DCDHeader, DCDReporter};
+use genesis::reporter::dcd::DCDReporter;
 use genesis::reporter::log::LOGReporter;
 use genesis::reporter::xyz::XYZReporter;
 use genesis::system::System;
@@ -40,22 +40,6 @@ fn compute_force(system: &mut System, e: f32, s: f32) {
     }
 }
 
-fn remove_v_com(system: &mut System) {
-    let mut v_com: Vector3<f32> = Vector3::zeros();
-    let mut m_tot: f32 = 0.0;
-
-    for i in 0..system.n {
-        v_com += system.m[i] * system.v[i];
-        m_tot += system.m[i];
-    }
-
-    v_com /= m_tot;
-
-    for v in system.v.iter_mut() {
-        *v -= v_com;
-    }
-}
-
 /// A simple program to initialize variables from a TOML file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -71,6 +55,8 @@ struct OutputConfig {
     out_dcd_path: String,
     out_log_path: String,
     out_xyz_path: String,
+    out_csv_freq: u32,
+    out_dcd_freq: u32,
 }
 
 /// Struct to represent the "dynamics" section in the TOML file
@@ -79,6 +65,7 @@ struct DynamicsConfig {
     time_step: f32,
     num_steps: u32,
     temperature: f64,
+    remove_com_v_freq: u32,
 }
 
 /// Struct to represent the "boundary" section in the TOML file
@@ -121,6 +108,7 @@ fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
 fn main() {
     // Initialize global timer
     let mut global_timer = Timer::default();
+
     ////////////////////////////////////////
     global_timer.start();
     //**************************************
@@ -199,20 +187,18 @@ fn main() {
         .with_random_velocities(config.dynamics.temperature, &mut rng)
         .build();
 
+    // Remove the center of mass velocity
+    system.remove_v_com();
+
     // Observe degrees of freedom
     df_obs.observe(&system);
 
-    remove_v_com(&mut system);
-
-    let out_ene_freq: u32 = 1000;
-    let out_dcd_freq: u32 = 10;
-    let rem_com_freq: u32 = 10;
     assert!(
-        out_ene_freq % rem_com_freq == 0,
+        config.output.out_csv_freq % config.dynamics.remove_com_v_freq == 0,
         "out_ene_freq is not a multiple of rem_com_freq"
     );
     assert!(
-        out_dcd_freq % rem_com_freq == 0,
+        config.output.out_dcd_freq % config.dynamics.remove_com_v_freq == 0,
         "out_dcd_freq is not a multiple of rem_com_freq"
     );
 
@@ -229,7 +215,7 @@ fn main() {
     //**************************************
 
     dcd_reporter
-        .write_header(DCDHeader::new(n as u32, n_steps / out_dcd_freq + 1))
+        .write_header(n as u32, n_steps / config.output.out_dcd_freq + 1)
         .expect("Failed to write DCD header");
     dcd_reporter
         .write_report(&system)
@@ -275,8 +261,8 @@ fn main() {
             system.r[i] += system.v[i] * dt_half;
         }
 
-        if step % rem_com_freq == 0 {
-            remove_v_com(&mut system);
+        if step % config.dynamics.remove_com_v_freq == 0 {
+            system.remove_v_com();
         }
 
         //**************************************
@@ -287,13 +273,13 @@ fn main() {
         output_timer.start();
         //**************************************
 
-        if step % out_dcd_freq == 0 {
+        if step % config.output.out_dcd_freq == 0 {
             dcd_reporter
                 .write_report(&system)
                 .expect("Failed to write DCD frame");
         }
 
-        if step % out_ene_freq == 0 {
+        if step % config.output.out_csv_freq == 0 {
             ke_obs.observe(&system);
             ue_obs.observe(&system, e, s);
             et_obs.observe(&ke_obs, &ue_obs);

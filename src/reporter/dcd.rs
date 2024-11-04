@@ -5,21 +5,6 @@ use std::io::{self, Write};
 use std::path::Path;
 
 #[derive(Debug)]
-pub struct DCDHeader {
-    num_atoms: u32,
-    num_frames: u32,
-}
-
-impl DCDHeader {
-    pub fn new(num_atoms: u32, num_frames: u32) -> Self {
-        DCDHeader {
-            num_atoms,
-            num_frames,
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct DCDReporter {
     file: File,
     header_flag: bool,
@@ -35,7 +20,7 @@ impl DCDReporter {
         Ok(DCDReporter::new(file, false))
     }
 
-    pub fn write_header(&mut self, header: DCDHeader) -> io::Result<()> {
+    pub fn write_header(&mut self, num_atoms: u32, num_frames: u32) -> io::Result<()> {
         if !self.header_flag {
             // Init buffer
             let mut buffer = Vec::new();
@@ -46,7 +31,7 @@ impl DCDReporter {
             // 01 - 04: "CORD" magic number
             buffer.write_all(b"CORD")?;
             // 05 - 08: Number of frames
-            buffer.write_u32::<LittleEndian>(header.num_frames)?;
+            buffer.write_u32::<LittleEndian>(num_frames)?;
             // 09 - 12: Unused (first step)
             buffer.write_u32::<LittleEndian>(0)?;
             // 13 - 16: Unused (output period)
@@ -95,7 +80,7 @@ impl DCDReporter {
             // Block size start
             buffer.write_u32::<LittleEndian>(4)?;
             // 01 - 04: Number of particles
-            buffer.write_u32::<LittleEndian>(header.num_atoms)?;
+            buffer.write_u32::<LittleEndian>(num_atoms)?;
             // Block size end
             buffer.write_u32::<LittleEndian>(4)?;
 

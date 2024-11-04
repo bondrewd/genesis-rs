@@ -40,6 +40,22 @@ impl System {
     pub fn builder() -> SystemBuilder {
         SystemBuilder::new()
     }
+
+    pub fn remove_v_com(&mut self) {
+        let mut v_com: Vector3<f32> = Vector3::zeros();
+        let mut m_tot: f32 = 0.0;
+
+        for i in 0..self.n {
+            v_com += self.m[i] * self.v[i];
+            m_tot += self.m[i];
+        }
+
+        v_com /= m_tot;
+
+        for v in self.v.iter_mut() {
+            *v -= v_com;
+        }
+    }
 }
 
 #[derive(Debug, Default)]
