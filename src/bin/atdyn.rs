@@ -112,13 +112,6 @@ fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
 }
 
 fn main() {
-    // Initialize global timer
-    let mut global_timer = Timer::default();
-
-    ////////////////////////////////////////
-    global_timer.start();
-    //**************************************
-
     // Initialize section timers
     let mut setup_timer = Timer::default();
     let mut output_timer = Timer::default();
@@ -317,17 +310,12 @@ fn main() {
     output_timer.stop();
     ////////////////////////////////////////
 
-    //**************************************
-    global_timer.stop();
-    ////////////////////////////////////////
-
     // Report the results
     log_reporter
         .write_report(
             setup_timer.elapsed(),
             output_timer.elapsed(),
             dynamics_timer.elapsed(),
-            global_timer.elapsed(),
         )
         .expect("Failed to write LOG report");
 }

@@ -23,7 +23,6 @@ impl LOGReporter {
         setup_time: std::time::Duration,
         output_time: std::time::Duration,
         dynamics_time: std::time::Duration,
-        total_time: std::time::Duration,
     ) -> io::Result<()> {
         // Init buffer
         let mut buffer = Vec::new();
@@ -32,7 +31,7 @@ impl LOGReporter {
         let setup_secs = setup_time.as_secs_f64();
         let output_secs = output_time.as_secs_f64();
         let dynamics_secs = dynamics_time.as_secs_f64();
-        let total_secs = total_time.as_secs_f64();
+        let total_secs = setup_secs + output_secs + dynamics_secs;
 
         // Calculate percentages
         let setup_percent = (setup_secs / total_secs) * 100.0;
