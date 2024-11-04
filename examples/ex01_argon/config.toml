@@ -1,10 +1,17 @@
+[input]
+mol_path = "inp.mol"
+par_path = "inp.par"
+pos_path = "inp.pos"
+
 [output]
-out_csv_path = "out.csv"
-out_dcd_path = "out.dcd"
-out_log_path = "out.log"
-out_xyz_path = "out.xyz"
-out_csv_freq = 1000
-out_dcd_freq = 100
+csv_path = "out.csv"
+dcd_path = "out.dcd"
+log_path = "out.log"
+rst_path = "out.rst"
+xyz_path = "out.xyz"
+csv_freq = 1000
+dcd_freq = 100
+rst_freq = 100
 
 [dynamics]
 time_step = 0.001
