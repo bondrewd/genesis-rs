@@ -109,6 +109,11 @@ impl SystemBuilder {
         self
     }
 
+    pub fn with_cuboid_boundary(mut self, bx: f32, by: f32, bz: f32) -> Self {
+        self.b = Some(Vector3::new(bx, by, bz));
+        self
+    }
+
     pub fn with_random_positions(mut self, rng: &mut StdRng) -> Self {
         let n = self.n.expect("n is required");
         let b = self.b.expect("b is required");

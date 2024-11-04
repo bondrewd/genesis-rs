@@ -10,7 +10,6 @@ use genesis::reporter::log::LOGReporter;
 use genesis::reporter::xyz::XYZReporter;
 use genesis::system::System;
 use genesis::timer::Timer;
-use nalgebra::Vector3;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::Deserialize;
@@ -76,12 +75,19 @@ struct BoundaryConfig {
     length_z: f32,
 }
 
+/// Struct to represent the "rng" section in the TOML file
+#[derive(Debug, Deserialize)]
+struct RngConfig {
+    seed: u64,
+}
+
 /// Main config struct combining all sections
 #[derive(Debug, Deserialize)]
 struct Config {
     output: OutputConfig,
     dynamics: DynamicsConfig,
     boundary: BoundaryConfig,
+    rng: RngConfig,
 }
 
 /// Expand `~` to the home directory
@@ -169,18 +175,18 @@ fn main() {
     let mut pr_obs = PressureObserver::new();
     let mut df_obs = DegreesOfFreedomObserver::new();
 
-    let mut rng: StdRng = StdRng::seed_from_u64(0);
+    let mut rng: StdRng = StdRng::seed_from_u64(config.rng.seed);
 
     let n: usize = 100;
     let e: f32 = 1.003;
     let s: f32 = 0.340;
     let mut system = System::builder()
         .n(n)
-        .b(Vector3::new(
+        .with_cuboid_boundary(
             config.boundary.length_x,
             config.boundary.length_y,
             config.boundary.length_z,
-        ))
+        )
         .m(vec![39.948; n])
         .with_random_charges(&mut rng)
         .with_random_positions(&mut rng)

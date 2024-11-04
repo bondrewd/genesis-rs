@@ -16,3 +16,6 @@ remove_com_v_freq = 100
 length_x = 20.0
 length_y = 20.0
 length_z = 20.0
+
+[rng]
+seed = 0
