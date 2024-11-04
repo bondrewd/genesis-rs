@@ -3,8 +3,9 @@ use std::vec;
 use nalgebra::Vector3;
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Normal};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct System {
     pub n: usize,
     pub b: Vector3<f32>,
@@ -82,27 +83,20 @@ impl SystemBuilder {
         SystemBuilder::default()
     }
 
-    pub fn n(mut self, n: usize) -> Self {
-        self.n = Some(n);
-        self
-    }
-
-    pub fn f(mut self, f: Vec<Vector3<f32>>) -> Self {
-        self.f = Some(f);
-        self
-    }
-
     pub fn with_masses(mut self, masses: Vec<f32>) -> Self {
+        self.n = self.n.or(Some(masses.len()));
         self.m = Some(masses);
         self
     }
 
     pub fn with_charges(mut self, charges: Vec<f32>) -> Self {
+        self.n = self.n.or(Some(charges.len()));
         self.q = Some(charges);
         self
     }
 
     pub fn with_classes(mut self, classes: Vec<u32>) -> Self {
+        self.n = self.n.or(Some(classes.len()));
         self.c = Some(classes);
         self
     }
@@ -113,11 +107,13 @@ impl SystemBuilder {
     }
 
     pub fn with_positions(mut self, positions: Vec<Vector3<f32>>) -> Self {
+        self.n = self.n.or(Some(positions.len()));
         self.r = Some(positions);
         self
     }
 
     pub fn with_velocities(mut self, velocities: Vec<Vector3<f32>>) -> Self {
+        self.n = self.n.or(Some(velocities.len()));
         self.v = Some(velocities);
         self
     }
@@ -139,7 +135,14 @@ impl SystemBuilder {
         self
     }
 
+    pub fn with_forces(mut self, forces: Vec<Vector3<f32>>) -> Self {
+        self.n = self.n.or(Some(forces.len()));
+        self.f = Some(forces);
+        self
+    }
+
     pub fn with_names(mut self, names: Vec<String>) -> Self {
+        self.n = self.n.or(Some(names.len()));
         self.names = Some(names);
         self
     }

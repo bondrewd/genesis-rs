@@ -11,7 +11,7 @@ rst_path = "out.rst"
 xyz_path = "out.xyz"
 csv_freq = 1000
 dcd_freq = 100
-rst_freq = 100
+rst_freq = 10000
 
 [dynamics]
 time_step = 0.001

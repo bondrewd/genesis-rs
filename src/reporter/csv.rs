@@ -62,7 +62,7 @@ impl CSVReporter {
         // Init buffer
         let mut buffer = Vec::new();
 
-        // Write the number of atoms (coordinates) at the top of the file
+        // Write the observations
         buffer.extend_from_slice(
             format!(
                 "{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",

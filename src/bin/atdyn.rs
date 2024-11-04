@@ -5,6 +5,8 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::Deserialize;
 use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 /// A simple program to initialize variables from a TOML file
@@ -149,6 +151,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+
     let mut dcd_reporter = match DCDReporter::with_path(out_dcd_path) {
         Ok(reporter) => reporter,
         Err(e) => {
@@ -156,6 +159,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+
     let mut log_reporter = match LOGReporter::with_path(out_log_path) {
         Ok(reporter) => reporter,
         Err(e) => {
@@ -163,6 +167,15 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    let mut rst_reporter = match RSTReporter::with_path(out_rst_path) {
+        Ok(reporter) => reporter,
+        Err(e) => {
+            eprintln!("Failed to create RST file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     let mut xyz_reporter = match XYZReporter::with_path(out_xyz_path) {
         Ok(reporter) => reporter,
         Err(e) => {
@@ -182,88 +195,108 @@ fn main() {
     let mut df_obs = DegreesOfFreedomObserver::new();
 
     let mut rng: StdRng = StdRng::seed_from_u64(config.rng.seed);
-
-    let n: usize = 100;
     let e: f32 = 1.003;
     let s: f32 = 0.340;
 
-    // Initialize system builder
-    let builder = System::builder();
-    let builder = builder.n(n);
-
-    // Set the boundary
-    let builder = builder.with_cuboid_boundary(
-        config.boundary.length_x,
-        config.boundary.length_y,
-        config.boundary.length_z,
-    );
-
-    // Set the masses, charges
-    let mol_parser = match MolParser::with_path(inp_mol_path) {
-        Ok(parser) => parser,
-        Err(e) => {
-            eprintln!("Failed to open MOL file: {}", e);
-            std::process::exit(1);
-        }
-    };
-    let parser_result = match mol_parser.parse() {
-        Ok(parser_result) => parser_result,
-        Err(e) => {
-            eprintln!("Failed to parse POS file: {}", e);
-            std::process::exit(1);
-        }
-    };
-    let builder = builder.with_masses(parser_result.masses);
-    let builder = builder.with_charges(parser_result.charges);
-    let builder = builder.with_classes(parser_result.classes);
-    let builder = builder.with_names(parser_result.names);
-
-    // Set the positions
-    let builder = match inp_pos_path {
-        Some(pos_path) => {
-            let pos_parser = match PosParser::with_path(pos_path) {
-                Ok(parser) => parser,
+    // Initialize the system
+    let mut system = match inp_rst_path {
+        Some(rst_path) => {
+            // Deserialize the system from the RST file
+            let file = match File::open(rst_path) {
+                Ok(file) => file,
                 Err(e) => {
-                    eprintln!("Failed to open POS file: {}", e);
+                    eprintln!("Failed to open RST file: {}", e);
                     std::process::exit(1);
                 }
             };
-            let parser_result = match pos_parser.parse() {
+            let reader = BufReader::new(file);
+            match serde_json::from_reader(reader) {
+                Ok(system) => system,
+                Err(e) => {
+                    eprintln!("Failed to deserialize RST file: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => {
+            // Initialize system builder
+            let builder = System::builder();
+
+            // Set the boundary
+            let builder = builder.with_cuboid_boundary(
+                config.boundary.length_x,
+                config.boundary.length_y,
+                config.boundary.length_z,
+            );
+
+            // Set the masses, charges
+            let mol_parser = match MolParser::with_path(inp_mol_path) {
+                Ok(parser) => parser,
+                Err(e) => {
+                    eprintln!("Failed to open MOL file: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            let parser_result = match mol_parser.parse() {
                 Ok(parser_result) => parser_result,
                 Err(e) => {
                     eprintln!("Failed to parse POS file: {}", e);
                     std::process::exit(1);
                 }
             };
-            builder.with_positions(parser_result.positions)
-        }
-        None => builder,
-    };
+            let builder = builder.with_masses(parser_result.masses);
+            let builder = builder.with_charges(parser_result.charges);
+            let builder = builder.with_classes(parser_result.classes);
+            let builder = builder.with_names(parser_result.names);
 
-    // Set the velocities
-    let builder = match inp_vel_path {
-        Some(vel_path) => {
-            let vel_parser = match VelParser::with_path(vel_path) {
-                Ok(parser) => parser,
-                Err(e) => {
-                    eprintln!("Failed to open VEL file: {}", e);
-                    std::process::exit(1);
+            // Set the positions
+            let builder = match inp_pos_path {
+                Some(pos_path) => {
+                    let pos_parser = match PosParser::with_path(pos_path) {
+                        Ok(parser) => parser,
+                        Err(e) => {
+                            eprintln!("Failed to open POS file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    let parser_result = match pos_parser.parse() {
+                        Ok(parser_result) => parser_result,
+                        Err(e) => {
+                            eprintln!("Failed to parse POS file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    builder.with_positions(parser_result.positions)
                 }
+                None => builder,
             };
-            let velocities = match vel_parser.parse() {
-                Ok(velocities) => velocities,
-                Err(e) => {
-                    eprintln!("Failed to parse VEL file: {}", e);
-                    std::process::exit(1);
-                }
-            };
-            builder.with_velocities(velocities)
-        }
-        None => builder.with_random_velocities(config.dynamics.temperature, &mut rng),
-    };
 
-    // Build the system
-    let mut system = builder.build();
+            // Set the velocities
+            let builder = match inp_vel_path {
+                Some(vel_path) => {
+                    let vel_parser = match VelParser::with_path(vel_path) {
+                        Ok(parser) => parser,
+                        Err(e) => {
+                            eprintln!("Failed to open VEL file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    let velocities = match vel_parser.parse() {
+                        Ok(velocities) => velocities,
+                        Err(e) => {
+                            eprintln!("Failed to parse VEL file: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    builder.with_velocities(velocities)
+                }
+                None => builder.with_random_velocities(config.dynamics.temperature, &mut rng),
+            };
+
+            // Build the system
+            builder.build()
+        }
+    };
 
     // Remove the center of mass velocity
     system.remove_v_com();
@@ -271,6 +304,29 @@ fn main() {
     // Observe degrees of freedom
     df_obs.observe(&system);
 
+    // Check output frequencies
+    if config.dynamics.num_steps % config.output.csv_freq != 0 {
+        eprintln!(
+            "Warning: num_steps is not a multiple of csv_freq: {} % {} != 0",
+            config.dynamics.num_steps, config.output.csv_freq
+        );
+    }
+
+    if config.dynamics.num_steps % config.output.dcd_freq != 0 {
+        eprintln!(
+            "Warning: num_steps is not a multiple of dcd_freq: {} % {} != 0",
+            config.dynamics.num_steps, config.output.dcd_freq
+        );
+    }
+
+    if config.dynamics.num_steps % config.output.rst_freq != 0 {
+        eprintln!(
+            "Warning: num_steps is not a multiple of rst_freq: {} % {} != 0",
+            config.dynamics.num_steps, config.output.rst_freq
+        );
+    }
+
+    // Setup integrator
     let dt: f32 = config.dynamics.time_step;
     let dt_half: f32 = dt * 0.5;
 
@@ -284,7 +340,7 @@ fn main() {
 
     dcd_reporter
         .write_header(
-            n as u32,
+            system.n as u32,
             config.dynamics.num_steps / config.output.dcd_freq + 1,
         )
         .expect("Failed to write DCD header");
@@ -368,6 +424,16 @@ fn main() {
                 Ok(_) => (),
                 Err(e) => {
                     eprintln!("Failed to write CSV frame: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        if step % config.output.rst_freq == 0 {
+            match rst_reporter.write_report(&system) {
+                Ok(_) => (),
+                Err(e) => {
+                    eprintln!("Failed to write RST frame: {}", e);
                     std::process::exit(1);
                 }
             }
