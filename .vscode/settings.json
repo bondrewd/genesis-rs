@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.for": "txt",
+        "*.par": "txt",
+        "*.pos": "txt"
+    }
+}

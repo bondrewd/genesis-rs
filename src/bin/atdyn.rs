@@ -194,7 +194,6 @@ fn main() {
 
     let dt: f32 = config.dynamics.time_step;
     let dt_half: f32 = dt * 0.5;
-    let n_steps: u32 = config.dynamics.num_steps;
 
     //**************************************
     setup_timer.stop();
@@ -205,7 +204,10 @@ fn main() {
     //**************************************
 
     dcd_reporter
-        .write_header(n as u32, n_steps / config.output.out_dcd_freq + 1)
+        .write_header(
+            n as u32,
+            config.dynamics.num_steps / config.output.out_dcd_freq + 1,
+        )
         .expect("Failed to write DCD header");
     dcd_reporter
         .write_report(&system)
@@ -231,7 +233,7 @@ fn main() {
     output_timer.stop();
     ////////////////////////////////////////
 
-    for step in 1..=n_steps {
+    for step in 1..=config.dynamics.num_steps {
         ////////////////////////////////////////
         dynamics_timer.start();
         //**************************************
