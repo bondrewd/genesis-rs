@@ -3,5 +3,6 @@
         "*.for": "txt",
         "*.par": "txt",
         "*.pos": "txt"
-    }
+    },
+    "fortran.fortls.disabled": true
 }

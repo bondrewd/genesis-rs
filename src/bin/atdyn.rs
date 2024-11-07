@@ -195,8 +195,6 @@ fn main() {
     let mut df_obs = DegreesOfFreedomObserver::new();
 
     let mut rng: StdRng = StdRng::seed_from_u64(config.rng.seed);
-    let e: f32 = 1.003;
-    let s: f32 = 0.340;
 
     // Initialize the system
     let mut system = match inp_rst_path {
@@ -340,6 +338,25 @@ fn main() {
         );
     }
 
+    // Initialize force field
+    let par_parser = match ParParser::with_path(inp_par_path) {
+        Ok(parser) => parser,
+        Err(e) => {
+            eprintln!("Failed to open PAR file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let par = match par_parser.parse() {
+        Ok(ff) => ff,
+        Err(e) => {
+            eprintln!("Failed to parse PAR file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let ff = ForceField::new(par.lj);
+
     // Setup integrator
     let dt: f32 = config.dynamics.time_step;
     let dt_half: f32 = dt * 0.5;
@@ -366,10 +383,10 @@ fn main() {
         .expect("Failed to write CSV header");
 
     ke_obs.observe(&system);
-    ue_obs.observe(&system, e, s);
+    ue_obs.observe(&system, &ff);
     et_obs.observe(&ke_obs, &ue_obs);
     te_obs.observe(&ke_obs, &df_obs);
-    vi_obs.observe(&system, e, s);
+    vi_obs.observe(&system, &ff);
     vo_obs.observe(&system);
     pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
     csv_reporter
@@ -395,7 +412,7 @@ fn main() {
             f.fill(0.0);
         }
 
-        compute_force(&mut system, e, s);
+        compute_force(&mut system, &ff);
 
         for i in 0..system.n {
             system.v[i] += system.f[i] * dt / system.m[i];
@@ -426,10 +443,10 @@ fn main() {
 
         if step % config.output.csv_freq == 0 {
             ke_obs.observe(&system);
-            ue_obs.observe(&system, e, s);
+            ue_obs.observe(&system, &ff);
             et_obs.observe(&ke_obs, &ue_obs);
             te_obs.observe(&ke_obs, &df_obs);
-            vi_obs.observe(&system, e, s);
+            vi_obs.observe(&system, &ff);
             vo_obs.observe(&system);
             pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
             match csv_reporter.write_report(
@@ -484,12 +501,17 @@ fn main() {
         .expect("Failed to write LOG report");
 }
 
-fn compute_force(system: &mut System, e: f32, s: f32) {
-    let s2: f32 = s * s;
-
+fn compute_force(system: &mut System, ff: &ForceField) {
     for i in 0..system.n {
         let ri = system.r[i];
+        let ci = system.c[i];
         for j in (i + 1)..system.n {
+            let cj = system.c[j];
+            let lj = ff.lj[&(ci, cj)];
+            let e = lj.epsilon;
+            let s = lj.sigma;
+            let s2 = s * s;
+
             let mut dr = system.r[j] - ri;
             let offset = dr.component_div(&system.b).map(|x| x.round());
             dr -= system.b.component_mul(&offset);

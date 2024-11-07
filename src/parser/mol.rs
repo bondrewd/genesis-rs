@@ -7,11 +7,16 @@ pub struct MolParserResult {
     pub names: Vec<String>,
     pub masses: Vec<f32>,
     pub charges: Vec<f32>,
-    pub classes: Vec<u32>,
+    pub classes: Vec<usize>,
 }
 
 impl MolParserResult {
-    pub fn new(names: Vec<String>, masses: Vec<f32>, charges: Vec<f32>, classes: Vec<u32>) -> Self {
+    pub fn new(
+        names: Vec<String>,
+        masses: Vec<f32>,
+        charges: Vec<f32>,
+        classes: Vec<usize>,
+    ) -> Self {
         Self {
             names,
             masses,
@@ -86,7 +91,7 @@ impl MolParser {
                 tokens
                     .next()
                     .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing token z"))?
-                    .parse::<u32>()
+                    .parse::<usize>()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
             );
         }

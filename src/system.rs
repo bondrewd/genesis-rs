@@ -11,7 +11,7 @@ pub struct System {
     pub b: Vector3<f32>,
     pub m: Vec<f32>,
     pub q: Vec<f32>,
-    pub c: Vec<u32>,
+    pub c: Vec<usize>,
     pub r: Vec<Vector3<f32>>,
     pub v: Vec<Vector3<f32>>,
     pub f: Vec<Vector3<f32>>,
@@ -25,7 +25,7 @@ impl System {
         b: Vector3<f32>,
         m: Vec<f32>,
         q: Vec<f32>,
-        c: Vec<u32>,
+        c: Vec<usize>,
         r: Vec<Vector3<f32>>,
         v: Vec<Vector3<f32>>,
         f: Vec<Vector3<f32>>,
@@ -71,7 +71,7 @@ pub struct SystemBuilder {
     b: Option<Vector3<f32>>,
     m: Option<Vec<f32>>,
     q: Option<Vec<f32>>,
-    c: Option<Vec<u32>>,
+    c: Option<Vec<usize>>,
     r: Option<Vec<Vector3<f32>>>,
     v: Option<Vec<Vector3<f32>>>,
     f: Option<Vec<Vector3<f32>>>,
@@ -95,7 +95,7 @@ impl SystemBuilder {
         self
     }
 
-    pub fn with_classes(mut self, classes: Vec<u32>) -> Self {
+    pub fn with_classes(mut self, classes: Vec<usize>) -> Self {
         self.n = self.n.or(Some(classes.len()));
         self.c = Some(classes);
         self

@@ -1,3 +1,4 @@
+use crate::ff::ForceField;
 use crate::system::System;
 
 #[derive(Debug, Default)]
@@ -14,14 +15,20 @@ impl PotentialEnergyObserver {
         self.observation
     }
 
-    pub fn observe(&mut self, system: &System, e: f32, s: f32) {
+    pub fn observe(&mut self, system: &System, ff: &ForceField) {
         let mut potential_energy: f64 = 0.0;
-        let s2: f32 = s * s;
 
         for i in 0..system.n {
             let ri = system.r[i];
-            for rj in system.r.iter().skip(i + 1) {
-                let mut dr = rj - ri;
+            let ci = system.c[i];
+            for j in (i + 1)..system.n {
+                let cj = system.c[j];
+                let lj = ff.lj[&(ci, cj)];
+                let e = lj.epsilon;
+                let s = lj.sigma;
+                let s2 = s * s;
+
+                let mut dr = system.r[j] - ri;
                 let offset = dr.component_div(&system.b).map(|x| x.round());
                 dr -= system.b.component_mul(&offset);
 
@@ -79,14 +86,20 @@ impl VirialObserver {
         self.observation
     }
 
-    pub fn observe(&mut self, system: &System, e: f32, s: f32) {
+    pub fn observe(&mut self, system: &System, ff: &ForceField) {
         let mut total_virial: f64 = 0.0;
-        let s2: f32 = s * s;
 
         for i in 0..system.n {
             let ri = system.r[i];
-            for rj in system.r.iter().skip(i + 1) {
-                let mut dr = rj - ri;
+            let ci = system.c[i];
+            for j in (i + 1)..system.n {
+                let cj = system.c[j];
+                let lj = ff.lj[&(ci, cj)];
+                let e = lj.epsilon;
+                let s = lj.sigma;
+                let s2 = s * s;
+
+                let mut dr = system.r[j] - ri;
                 let offset = dr.component_div(&system.b).map(|x| x.round());
                 dr -= system.b.component_mul(&offset);
 
