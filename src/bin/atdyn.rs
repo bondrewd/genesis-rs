@@ -507,7 +507,7 @@ fn compute_force(system: &mut System, ff: &ForceField) {
         let ci = system.c[i];
         for j in (i + 1)..system.n {
             let cj = system.c[j];
-            let lj = ff.lj[&(ci, cj)];
+            let lj = ff.lj[(ci, cj)];
             let e = lj.epsilon;
             let s = lj.sigma;
             let s2 = s * s;

@@ -1,4 +1,5 @@
-use crate::ff::{LennardJonesItem, LennardJonesParameters};
+use crate::ff::LennardJonesItem;
+use nalgebra::DMatrix;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -6,11 +7,11 @@ use std::path::Path;
 
 #[derive(Debug)]
 pub struct ParParserResult {
-    pub lj: LennardJonesParameters,
+    pub lj: DMatrix<LennardJonesItem>,
 }
 
 impl ParParserResult {
-    pub fn new(lj: LennardJonesParameters) -> Self {
+    pub fn new(lj: DMatrix<LennardJonesItem>) -> Self {
         Self { lj }
     }
 }
@@ -46,7 +47,7 @@ impl ParParser {
 
     pub fn parse(&self) -> Result<ParParserResult, io::Error> {
         // Initialize buffer
-        let mut lj_parameters = HashMap::new();
+        let mut lj_parameters_map = HashMap::new();
 
         // Read file line by line
         for line in BufReader::new(&self.file).lines() {
@@ -100,10 +101,10 @@ impl ParParser {
                         .parse::<f32>()
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-                    lj_parameters
+                    lj_parameters_map
                         .entry((c1, c2))
                         .or_insert(LennardJonesItem::new(e, s));
-                    lj_parameters
+                    lj_parameters_map
                         .entry((c2, c1))
                         .or_insert(LennardJonesItem::new(e, s));
                 }
@@ -119,20 +120,35 @@ impl ParParser {
         // Add missing Lennard-Jones parameters by using combination rules:
         // sigma_ij = (sigma_ii + sigma_jj) / 2
         // epsilon_ij = sqrt(epsilon_ii * epsilon_jj)
-        for (c1, c2) in lj_parameters
+        for (c1, c2) in lj_parameters_map
             .keys()
             .cloned()
             .collect::<Vec<(usize, usize)>>()
         {
-            if !lj_parameters.contains_key(&(c1, c2)) {
-                let lj1 = &lj_parameters[&(c1, c1)];
-                let lj2 = &lj_parameters[&(c2, c2)];
+            if !lj_parameters_map.contains_key(&(c1, c2)) {
+                let lj1 = &lj_parameters_map[&(c1, c1)];
+                let lj2 = &lj_parameters_map[&(c2, c2)];
                 let e = (lj1.epsilon * lj2.epsilon).sqrt();
                 let s = (lj1.sigma + lj2.sigma) / 2.0;
-                lj_parameters.insert((c1, c2), LennardJonesItem::new(e, s));
-                lj_parameters.insert((c2, c1), LennardJonesItem::new(e, s));
+                lj_parameters_map.insert((c1, c2), LennardJonesItem::new(e, s));
+                lj_parameters_map.insert((c2, c1), LennardJonesItem::new(e, s));
             }
         }
+
+        // Find maximum class index
+        let max_class = lj_parameters_map
+            .keys()
+            .cloned()
+            .map(|(c1, c2)| c1.max(c2))
+            .max()
+            .unwrap_or(0);
+
+        // Create matrix
+        let lj_parameters = DMatrix::from_fn(max_class + 1, max_class + 1, |i, j| {
+            *lj_parameters_map
+                .get(&(i, j))
+                .unwrap_or(&LennardJonesItem::default())
+        });
 
         Ok(ParParserResult::new(lj_parameters))
     }

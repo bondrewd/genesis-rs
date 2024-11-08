@@ -23,7 +23,7 @@ impl PotentialEnergyObserver {
             let ci = system.c[i];
             for j in (i + 1)..system.n {
                 let cj = system.c[j];
-                let lj = ff.lj[&(ci, cj)];
+                let lj = ff.lj[(ci, cj)];
                 let e = lj.epsilon;
                 let s = lj.sigma;
                 let s2 = s * s;
@@ -94,7 +94,7 @@ impl VirialObserver {
             let ci = system.c[i];
             for j in (i + 1)..system.n {
                 let cj = system.c[j];
-                let lj = ff.lj[&(ci, cj)];
+                let lj = ff.lj[(ci, cj)];
                 let e = lj.epsilon;
                 let s = lj.sigma;
                 let s2 = s * s;

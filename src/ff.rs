@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use nalgebra::DMatrix;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct LennardJonesItem {
     pub epsilon: f32,
     pub sigma: f32,
@@ -12,15 +12,13 @@ impl LennardJonesItem {
     }
 }
 
-pub type LennardJonesParameters = HashMap<(usize, usize), LennardJonesItem>;
-
 #[derive(Debug)]
 pub struct ForceField {
-    pub lj: LennardJonesParameters,
+    pub lj: DMatrix<LennardJonesItem>,
 }
 
 impl ForceField {
-    pub fn new(lj: LennardJonesParameters) -> Self {
+    pub fn new(lj: DMatrix<LennardJonesItem>) -> Self {
         Self { lj }
     }
 }
