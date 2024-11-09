@@ -1,13 +1,10 @@
 use clap::Parser;
-use dirs::home_dir;
 use genesis::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use serde::Deserialize;
-use std::fs;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// A simple program to initialize variables from a TOML file
 #[derive(Parser, Debug)]
@@ -15,83 +12,6 @@ use std::path::{Path, PathBuf};
 struct Args {
     /// Path to the .toml configuration file (positional argument)
     config: String,
-}
-
-/// Struct to represent the "output" section in the TOML file
-#[derive(Debug, Deserialize)]
-struct InputConfig {
-    par_path: String,
-    mol_path: Option<String>,
-    pos_path: Option<String>,
-    vel_path: Option<String>,
-    rst_path: Option<String>,
-}
-
-/// Struct to represent the "output" section in the TOML file
-#[derive(Debug, Deserialize)]
-struct OutputConfig {
-    csv_path: String,
-    dcd_path: String,
-    log_path: String,
-    rst_path: String,
-    xyz_path: String,
-    csv_freq: u32,
-    dcd_freq: u32,
-    rst_freq: u32,
-}
-
-/// Struct to represent the "dynamics" section in the TOML file
-#[derive(Debug, Deserialize)]
-struct DynamicsConfig {
-    time_step: f32,
-    num_steps: u32,
-    temperature: f64,
-    remove_com_v_freq: u32,
-}
-
-/// Struct to represent the "boundary" section in the TOML file
-#[derive(Debug, Deserialize)]
-struct BoundaryConfig {
-    length_x: f32,
-    length_y: f32,
-    length_z: f32,
-}
-
-/// Struct to represent the "rng" section in the TOML file
-#[derive(Debug, Deserialize)]
-struct RngConfig {
-    seed: u64,
-}
-
-/// Main config struct combining all sections
-#[derive(Debug, Deserialize)]
-struct Config {
-    input: InputConfig,
-    output: OutputConfig,
-    dynamics: DynamicsConfig,
-    boundary: BoundaryConfig,
-    rng: RngConfig,
-}
-
-/// Expand `~` to the home directory
-fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
-    let path_str = path.as_ref().to_string_lossy().to_string();
-    if path_str.starts_with("~") {
-        if let Some(home) = home_dir() {
-            return PathBuf::from(path_str.replacen("~", &home.to_string_lossy(), 1));
-        }
-    }
-    PathBuf::from(path_str)
-}
-
-/// Resolve the path to handle relative vs. absolute paths
-fn resolve_path<P: AsRef<Path>>(path: P, base_dir: &Path) -> PathBuf {
-    let path = expand_tilde(Path::new(path.as_ref()));
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base_dir.join(path)
-    }
 }
 
 fn main() {
@@ -106,45 +26,10 @@ fn main() {
 
     // Parse command-line arguments
     let args = Args::parse();
-
-    // Read the TOML file from the given path
-    let config_path = Path::new(&args.config);
-    let config_content = match fs::read_to_string(config_path) {
-        Ok(content) => content,
-        Err(e) => {
-            eprintln!("Failed to read the config file {:?}: {}", config_path, e);
-            std::process::exit(1);
-        }
-    };
-
-    // Parse the TOML file into the `Config` struct
-    let config: Config = match toml::from_str(&config_content) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("Failed to parse the config file: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Get the directory where the config file is located
-    let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));
-
-    // Resolve input file paths
-    let inp_par_path = resolve_path(&config.input.par_path, config_dir);
-    let inp_mol_path = &config.input.mol_path.map(|p| resolve_path(p, config_dir));
-    let inp_pos_path = &config.input.pos_path.map(|p| resolve_path(p, config_dir));
-    let inp_vel_path = &config.input.vel_path.map(|p| resolve_path(p, config_dir));
-    let inp_rst_path = &config.input.rst_path.map(|p| resolve_path(p, config_dir));
-
-    // Resolve output file paths
-    let out_csv_path = resolve_path(&config.output.csv_path, config_dir);
-    let out_dcd_path = resolve_path(&config.output.dcd_path, config_dir);
-    let out_log_path = resolve_path(&config.output.log_path, config_dir);
-    let out_rst_path = resolve_path(&config.output.rst_path, config_dir);
-    let out_xyz_path = resolve_path(&config.output.xyz_path, config_dir);
+    let config = Config::try_from(Path::new(&args.config)).unwrap();
 
     // Initialize reporters
-    let mut csv_reporter = match CSVReporter::with_path(out_csv_path) {
+    let mut csv_reporter = match CSVReporter::with_path(config.output.csv_path.unwrap()) {
         Ok(reporter) => reporter,
         Err(e) => {
             eprintln!("Failed to create CSV file: {}", e);
@@ -152,7 +37,7 @@ fn main() {
         }
     };
 
-    let mut dcd_reporter = match DCDReporter::with_path(out_dcd_path) {
+    let mut dcd_reporter = match DCDReporter::with_path(config.output.dcd_path.unwrap()) {
         Ok(reporter) => reporter,
         Err(e) => {
             eprintln!("Failed to create DCD file: {}", e);
@@ -160,7 +45,7 @@ fn main() {
         }
     };
 
-    let mut log_reporter = match LOGReporter::with_path(out_log_path) {
+    let mut log_reporter = match LOGReporter::with_path(config.output.log_path.unwrap()) {
         Ok(reporter) => reporter,
         Err(e) => {
             eprintln!("Failed to create LOG file: {}", e);
@@ -168,7 +53,7 @@ fn main() {
         }
     };
 
-    let mut rst_reporter = match RSTReporter::with_path(out_rst_path) {
+    let mut rst_reporter = match RSTReporter::with_path(config.output.rst_path.unwrap()) {
         Ok(reporter) => reporter,
         Err(e) => {
             eprintln!("Failed to create RST file: {}", e);
@@ -176,7 +61,7 @@ fn main() {
         }
     };
 
-    let mut xyz_reporter = match XYZReporter::with_path(out_xyz_path) {
+    let mut xyz_reporter = match XYZReporter::with_path(config.output.xyz_path.unwrap()) {
         Ok(reporter) => reporter,
         Err(e) => {
             eprintln!("Failed to create XYZ file: {}", e);
@@ -197,7 +82,7 @@ fn main() {
     let mut rng: StdRng = StdRng::seed_from_u64(config.rng.seed);
 
     // Initialize the system
-    let mut system = match inp_rst_path {
+    let mut system = match config.input.rst_path {
         Some(rst_path) => {
             // Deserialize the system from the RST file
             let file = match File::open(rst_path) {
@@ -228,7 +113,7 @@ fn main() {
             );
 
             // Set the masses, charges
-            let builder = match inp_mol_path {
+            let builder = match config.input.mol_path {
                 Some(mol_path) => {
                     let mol_parser = match MolParser::with_path(mol_path) {
                         Ok(parser) => parser,
@@ -257,7 +142,7 @@ fn main() {
             };
 
             // Set the positions
-            let builder = match inp_pos_path {
+            let builder = match config.input.pos_path {
                 Some(pos_path) => {
                     let pos_parser = match PosParser::with_path(pos_path) {
                         Ok(parser) => parser,
@@ -282,7 +167,7 @@ fn main() {
             };
 
             // Set the velocities
-            let builder = match inp_vel_path {
+            let builder = match config.input.vel_path {
                 Some(vel_path) => {
                     let vel_parser = match VelParser::with_path(vel_path) {
                         Ok(parser) => parser,
@@ -339,7 +224,7 @@ fn main() {
     }
 
     // Initialize force field
-    let par_parser = match ParParser::with_path(inp_par_path) {
+    let par_parser = match ParParser::with_path(config.input.par_path.unwrap()) {
         Ok(parser) => parser,
         Err(e) => {
             eprintln!("Failed to open PAR file: {}", e);

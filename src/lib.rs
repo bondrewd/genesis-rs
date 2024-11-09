@@ -1,3 +1,4 @@
+pub mod config;
 pub mod ff;
 pub mod observer;
 pub mod parser;
@@ -6,6 +7,7 @@ pub mod system;
 pub mod timer;
 
 pub mod prelude {
+    pub use crate::config::Config;
     pub use crate::ff::prelude::*;
     pub use crate::observer::prelude::*;
     pub use crate::parser::mol::MolParser;
