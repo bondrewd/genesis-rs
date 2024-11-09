@@ -1,6 +1,14 @@
 use crate::ff::ForceField;
 use crate::system::System;
 
+// Prelude for observer module
+pub mod prelude {
+    pub use crate::observer::{
+        DegreesOfFreedomObserver, KineticEnergyObserver, PotentialEnergyObserver, PressureObserver,
+        TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
+    };
+}
+
 #[derive(Debug, Default)]
 pub struct PotentialEnergyObserver {
     observation: Option<f64>,
@@ -16,33 +24,7 @@ impl PotentialEnergyObserver {
     }
 
     pub fn observe(&mut self, system: &System, ff: &ForceField) {
-        let mut potential_energy: f64 = 0.0;
-
-        for i in 0..system.n {
-            let ri = system.r[i];
-            let ci = system.c[i];
-            for j in (i + 1)..system.n {
-                let cj = system.c[j];
-                let lj = ff.lj[(ci, cj)];
-                let e = lj.epsilon;
-                let s = lj.sigma;
-                let s2 = s * s;
-
-                let mut dr = system.r[j] - ri;
-                let offset = dr.component_div(&system.b).map(|x| x.round());
-                dr -= system.b.component_mul(&offset);
-
-                let r2: f32 = 1.0 / dr.norm_squared();
-                let c2: f32 = s2 * r2;
-                let c4: f32 = c2 * c2;
-                let c6: f32 = c4 * c2;
-
-                let energy: f32 = 4.0 * e * c6 * (c6 - 1.0);
-                potential_energy += energy as f64;
-            }
-        }
-
-        self.observation = Some(potential_energy); // kJ/mol
+        self.observation = Some(ff.compute_energy(system)); // kJ/mol
     }
 }
 
@@ -87,35 +69,7 @@ impl VirialObserver {
     }
 
     pub fn observe(&mut self, system: &System, ff: &ForceField) {
-        let mut total_virial: f64 = 0.0;
-
-        for i in 0..system.n {
-            let ri = system.r[i];
-            let ci = system.c[i];
-            for j in (i + 1)..system.n {
-                let cj = system.c[j];
-                let lj = ff.lj[(ci, cj)];
-                let e = lj.epsilon;
-                let s = lj.sigma;
-                let s2 = s * s;
-
-                let mut dr = system.r[j] - ri;
-                let offset = dr.component_div(&system.b).map(|x| x.round());
-                dr -= system.b.component_mul(&offset);
-
-                let r2: f32 = 1.0 / dr.norm_squared();
-                let c2: f32 = s2 * r2;
-                let c4: f32 = c2 * c2;
-                let c6: f32 = c4 * c2;
-
-                let force: f32 = 48.0 * e * c6 * (c6 - 0.5) * r2;
-
-                let virial: f32 = force / r2;
-                total_virial += virial as f64;
-            }
-        }
-
-        self.observation = Some(total_virial); // kJ/mol
+        self.observation = Some(ff.compute_virial(system)); // kJ/mol
     }
 }
 

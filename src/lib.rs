@@ -6,11 +6,8 @@ pub mod system;
 pub mod timer;
 
 pub mod prelude {
-    pub use crate::ff::ForceField;
-    pub use crate::observer::{
-        DegreesOfFreedomObserver, KineticEnergyObserver, PotentialEnergyObserver, PressureObserver,
-        TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
-    };
+    pub use crate::ff::prelude::*;
+    pub use crate::observer::prelude::*;
     pub use crate::parser::mol::MolParser;
     pub use crate::parser::par::ParParser;
     pub use crate::parser::pos::PosParser;

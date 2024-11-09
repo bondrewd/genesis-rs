@@ -355,7 +355,7 @@ fn main() {
         }
     };
 
-    let ff = ForceField::new(par.lj);
+    let ff = ForceField::with_parameters(par);
 
     // Setup integrator
     let dt: f32 = config.dynamics.time_step;
@@ -412,7 +412,7 @@ fn main() {
             f.fill(0.0);
         }
 
-        compute_force(&mut system, &ff);
+        ff.update_force(&mut system);
 
         for i in 0..system.n {
             system.v[i] += system.f[i] * dt / system.m[i];
@@ -499,32 +499,4 @@ fn main() {
             dynamics_timer.elapsed(),
         )
         .expect("Failed to write LOG report");
-}
-
-fn compute_force(system: &mut System, ff: &ForceField) {
-    for i in 0..system.n {
-        let ri = system.r[i];
-        let ci = system.c[i];
-        for j in (i + 1)..system.n {
-            let cj = system.c[j];
-            let lj = ff.lj[(ci, cj)];
-            let e = lj.epsilon;
-            let s = lj.sigma;
-            let s2 = s * s;
-
-            let mut dr = system.r[j] - ri;
-            let offset = dr.component_div(&system.b).map(|x| x.round());
-            dr -= system.b.component_mul(&offset);
-
-            let r2: f32 = 1.0 / dr.norm_squared();
-            let c2: f32 = s2 * r2;
-            let c4: f32 = c2 * c2;
-            let c6: f32 = c4 * c2;
-
-            let force: f32 = 48.0 * e * c6 * (c6 - 0.5) * r2;
-
-            system.f[i] -= force * dr;
-            system.f[j] += force * dr;
-        }
-    }
 }
