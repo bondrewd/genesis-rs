@@ -1,4 +1,3 @@
-use dirs::home_dir;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -60,33 +59,26 @@ impl TryFrom<&Path> for Config {
         let config = std::fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&config)?;
 
-        config.input.par_path = config.input.par_path.map(|p| resolve_path(&p, &parent));
-        config.input.mol_path = config.input.mol_path.map(|p| resolve_path(&p, &parent));
-        config.input.pos_path = config.input.pos_path.map(|p| resolve_path(&p, &parent));
-        config.input.vel_path = config.input.vel_path.map(|p| resolve_path(&p, &parent));
-        config.input.rst_path = config.input.rst_path.map(|p| resolve_path(&p, &parent));
+        let resolver = |p: PathBuf| -> PathBuf {
+            if p.is_absolute() {
+                p
+            } else {
+                parent.join(p)
+            }
+        };
 
-        config.output.csv_path = config.output.csv_path.map(|p| resolve_path(&p, &parent));
-        config.output.dcd_path = config.output.dcd_path.map(|p| resolve_path(&p, &parent));
-        config.output.log_path = config.output.log_path.map(|p| resolve_path(&p, &parent));
-        config.output.rst_path = config.output.rst_path.map(|p| resolve_path(&p, &parent));
-        config.output.xyz_path = config.output.xyz_path.map(|p| resolve_path(&p, &parent));
+        config.input.par_path = config.input.par_path.map(resolver);
+        config.input.mol_path = config.input.mol_path.map(resolver);
+        config.input.pos_path = config.input.pos_path.map(resolver);
+        config.input.vel_path = config.input.vel_path.map(resolver);
+        config.input.rst_path = config.input.rst_path.map(resolver);
+
+        config.output.csv_path = config.output.csv_path.map(resolver);
+        config.output.dcd_path = config.output.dcd_path.map(resolver);
+        config.output.log_path = config.output.log_path.map(resolver);
+        config.output.rst_path = config.output.rst_path.map(resolver);
+        config.output.xyz_path = config.output.xyz_path.map(resolver);
 
         Ok(config)
-    }
-}
-
-pub fn resolve_path<P: AsRef<Path>>(path: P, parent: P) -> PathBuf {
-    let path = PathBuf::from(path.as_ref());
-    let path = path
-        .strip_prefix("~")
-        .map(|p| home_dir().map(|home| home.join(p)))
-        .ok()
-        .flatten()
-        .unwrap_or(path);
-    if path.is_absolute() {
-        path
-    } else {
-        parent.as_ref().join(path)
     }
 }
