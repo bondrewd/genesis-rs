@@ -4,72 +4,106 @@ use crate::system::System;
 // Prelude for observer module
 pub mod prelude {
     pub use crate::observer::{
-        DegreesOfFreedomObserver, KineticEnergyObserver, PotentialEnergyObserver, PressureObserver,
-        TemperatureObserver, TotalEnergyObserver, VirialObserver, VolumeObserver,
+        DegreesOfFreedomObserver, GeneralObserver, KineticEnergyObserver, Observer,
+        PotentialEnergyObserver, VirialObserver, VolumeObserver,
     };
 }
 
-#[derive(Debug, Default)]
-pub struct PotentialEnergyObserver {
-    observation: Option<f64>,
-}
+pub type GeneralObserver = Observer<
+    KineticEnergyObserver,
+    PotentialEnergyObserver,
+    VirialObserver,
+    DegreesOfFreedomObserver,
+    VolumeObserver,
+>;
 
-impl PotentialEnergyObserver {
-    pub fn new() -> Self {
-        PotentialEnergyObserver::default()
-    }
-
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
-    }
-
-    pub fn observe(&mut self, system: &System, ff: &ForceField) {
-        self.observation = Some(ff.compute_energy(system)); // kJ/mol
-    }
+pub trait Observable {
+    type Observation;
+    fn observe(&mut self, system: &System, ff: &ForceField) -> Self::Observation;
+    fn reset(&mut self);
 }
 
 #[derive(Debug, Default)]
-pub struct TotalEnergyObserver {
-    observation: Option<f64>,
+pub struct Observer<K, U, R, D, V>
+where
+    K: Observable + Default,
+    U: Observable + Default,
+    R: Observable + Default,
+    D: Observable + Default,
+    V: Observable + Default,
+{
+    pub kinetic_energy: K,
+    pub potential_energy: U,
+    pub virial: R,
+    pub degrees_of_freedom: D,
+    pub volume: V,
 }
 
-impl TotalEnergyObserver {
+impl<K, U, R, D, V> Observer<K, U, R, D, V>
+where
+    K: Observable + Default,
+    U: Observable + Default,
+    R: Observable + Default,
+    D: Observable + Default,
+    V: Observable + Default,
+    K::Observation: Into<f64>,
+    U::Observation: Into<f64>,
+    R::Observation: Into<f64>,
+    D::Observation: Into<f64>,
+    V::Observation: Into<f64>,
+{
     pub fn new() -> Self {
-        TotalEnergyObserver::default()
+        Self::default()
     }
 
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
+    pub fn reset(&mut self) {
+        self.kinetic_energy.reset();
+        self.potential_energy.reset();
+        self.virial.reset();
+        self.degrees_of_freedom.reset();
+        self.volume.reset();
     }
 
-    pub fn observe(&mut self, ke_obs: &KineticEnergyObserver, ue_obs: &PotentialEnergyObserver) {
-        let ke = ke_obs.last_observation();
-        let ue = ue_obs.last_observation();
-        if let (Some(ke), Some(ue)) = (ke, ue) {
-            let total_energy = ke + ue;
-            self.observation = Some(total_energy);
-        } else {
-            self.observation = None;
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct VirialObserver {
-    observation: Option<f64>,
-}
-
-impl VirialObserver {
-    pub fn new() -> Self {
-        VirialObserver::default()
+    pub fn kinetic_energy(&mut self, system: &System, ff: &ForceField) -> K::Observation {
+        self.kinetic_energy.observe(system, ff)
     }
 
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
+    pub fn potential_energy(&mut self, system: &System, ff: &ForceField) -> U::Observation {
+        self.potential_energy.observe(system, ff)
     }
 
-    pub fn observe(&mut self, system: &System, ff: &ForceField) {
-        self.observation = Some(ff.compute_virial(system)); // kJ/mol
+    pub fn virial(&mut self, system: &System, ff: &ForceField) -> R::Observation {
+        self.virial.observe(system, ff)
+    }
+
+    pub fn degrees_of_freedom(&mut self, system: &System, ff: &ForceField) -> D::Observation {
+        self.degrees_of_freedom.observe(system, ff)
+    }
+
+    pub fn volume(&mut self, system: &System, ff: &ForceField) -> V::Observation {
+        self.volume.observe(system, ff)
+    }
+
+    pub fn total_energy(&mut self, system: &System, ff: &ForceField) -> f64 {
+        let ke: f64 = self.kinetic_energy(system, ff).into();
+        let pe: f64 = self.potential_energy(system, ff).into();
+        ke + pe
+    }
+
+    pub fn temperature(&mut self, system: &System, ff: &ForceField) -> f64 {
+        let ke: f64 = self.kinetic_energy(system, ff).into();
+        let df: f64 = self.degrees_of_freedom(system, ff).into();
+        let boltzmann: f64 = 8.314462618;
+        2.0 * ke / (df as f64 * boltzmann)
+    }
+
+    pub fn pressure(&mut self, system: &System, ff: &ForceField) -> f64 {
+        let vo: f64 = self.volume(system, ff).into();
+        let vi: f64 = self.virial(system, ff).into();
+        let te: f64 = self.temperature(system, ff);
+        let df: f64 = self.degrees_of_freedom(system, ff).into();
+        let boltzmann: f64 = 8.314462618;
+        (vi + 3.0 * df * boltzmann * te) / (3.0 * vo)
     }
 }
 
@@ -78,24 +112,76 @@ pub struct KineticEnergyObserver {
     observation: Option<f64>,
 }
 
-impl KineticEnergyObserver {
-    pub fn new() -> Self {
-        KineticEnergyObserver::default()
-    }
+impl Observable for KineticEnergyObserver {
+    type Observation = f64;
 
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
-    }
+    fn observe(&mut self, system: &System, _ff: &ForceField) -> Self::Observation {
+        match self.observation {
+            Some(kinetic_energy) => kinetic_energy,
+            None => {
+                let mut kinetic_energy: f64 = 0.0;
 
-    pub fn observe(&mut self, system: &System) {
-        let mut kinetic_energy: f64 = 0.0;
+                for i in 0..system.n {
+                    let energy: f32 = 0.5_f32 * system.m[i] * system.v[i].dot(&system.v[i]);
+                    kinetic_energy += energy as f64;
+                }
 
-        for i in 0..system.n {
-            let energy: f32 = 0.5_f32 * system.m[i] * system.v[i].dot(&system.v[i]);
-            kinetic_energy += energy as f64;
+                self.observation = Some(kinetic_energy);
+                kinetic_energy
+            }
         }
+    }
 
-        self.observation = Some(kinetic_energy); // kJ/mol
+    fn reset(&mut self) {
+        self.observation = None;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PotentialEnergyObserver {
+    observation: Option<f64>,
+}
+
+impl Observable for PotentialEnergyObserver {
+    type Observation = f64;
+
+    fn observe(&mut self, system: &System, ff: &ForceField) -> Self::Observation {
+        match self.observation {
+            Some(potential_energy) => potential_energy,
+            None => {
+                let potential_energy = ff.compute_energy(system);
+                self.observation = Some(potential_energy);
+                potential_energy
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        self.observation = None;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct VirialObserver {
+    observation: Option<f64>,
+}
+
+impl Observable for VirialObserver {
+    type Observation = f64;
+
+    fn observe(&mut self, system: &System, ff: &ForceField) -> Self::Observation {
+        match self.observation {
+            Some(virial) => virial,
+            None => {
+                let virial = ff.compute_virial(system);
+                self.observation = Some(virial);
+                virial
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        self.observation = None;
     }
 }
 
@@ -104,45 +190,22 @@ pub struct DegreesOfFreedomObserver {
     observation: Option<u32>,
 }
 
-impl DegreesOfFreedomObserver {
-    pub fn new() -> Self {
-        DegreesOfFreedomObserver::default()
-    }
+impl Observable for DegreesOfFreedomObserver {
+    type Observation = u32;
 
-    pub fn last_observation(&self) -> Option<u32> {
-        self.observation
-    }
-
-    pub fn observe(&mut self, system: &System) {
-        let dof: u32 = 3 * system.n as u32 - 3;
-        self.observation = Some(dof);
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct TemperatureObserver {
-    observation: Option<f64>,
-}
-
-impl TemperatureObserver {
-    pub fn new() -> Self {
-        TemperatureObserver::default()
-    }
-
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
-    }
-
-    pub fn observe(&mut self, ke_obs: &KineticEnergyObserver, df_obs: &DegreesOfFreedomObserver) {
-        let ke = ke_obs.last_observation();
-        let df = df_obs.last_observation();
-        if let (Some(ke), Some(df)) = (ke, df) {
-            let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
-            let temperature = 2.0 * ke / (df as f64 * boltzmann);
-            self.observation = Some(temperature);
-        } else {
-            self.observation = None;
+    fn observe(&mut self, system: &System, _ff: &ForceField) -> Self::Observation {
+        match self.observation {
+            Some(dof) => dof,
+            None => {
+                let dof: u32 = 3 * system.n as u32 - 3;
+                self.observation = Some(dof);
+                dof
+            }
         }
+    }
+
+    fn reset(&mut self) {
+        self.observation = None;
     }
 }
 
@@ -151,52 +214,21 @@ pub struct VolumeObserver {
     observation: Option<f64>,
 }
 
-impl VolumeObserver {
-    pub fn new() -> Self {
-        VolumeObserver::default()
-    }
+impl Observable for VolumeObserver {
+    type Observation = f64;
 
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
-    }
-
-    pub fn observe(&mut self, system: &System) {
-        let volume: f64 = system.b.x as f64 * system.b.y as f64 * system.b.z as f64;
-        self.observation = Some(volume);
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct PressureObserver {
-    observation: Option<f64>,
-}
-
-impl PressureObserver {
-    pub fn new() -> Self {
-        PressureObserver::default()
-    }
-
-    pub fn last_observation(&self) -> Option<f64> {
-        self.observation
-    }
-
-    pub fn observe(
-        &mut self,
-        vo_obs: &VolumeObserver,
-        vi_obs: &VirialObserver,
-        te_obs: &TemperatureObserver,
-        df_obs: &DegreesOfFreedomObserver,
-    ) {
-        let vo = vo_obs.last_observation();
-        let vi = vi_obs.last_observation();
-        let te = te_obs.last_observation();
-        let df = df_obs.last_observation();
-        if let (Some(vo), Some(vi), Some(te), Some(df)) = (vo, vi, te, df) {
-            let boltzmann: f64 = 8.314462618; // kJ/(mol*K)
-            let pressure: f64 = (vi + 3.0 * df as f64 * boltzmann * te) / (3.0 * vo);
-            self.observation = Some(pressure);
-        } else {
-            self.observation = None;
+    fn observe(&mut self, system: &System, _ff: &ForceField) -> Self::Observation {
+        match self.observation {
+            Some(volume) => volume,
+            None => {
+                let volume = system.b.x as f64 * system.b.y as f64 * system.b.z as f64;
+                self.observation = Some(volume);
+                volume
+            }
         }
+    }
+
+    fn reset(&mut self) {
+        self.observation = None;
     }
 }

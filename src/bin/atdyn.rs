@@ -70,14 +70,7 @@ fn main() {
     };
 
     // Initialize observers
-    let mut et_obs = TotalEnergyObserver::new();
-    let mut ue_obs = PotentialEnergyObserver::new();
-    let mut ke_obs = KineticEnergyObserver::new();
-    let mut te_obs = TemperatureObserver::new();
-    let mut vi_obs = VirialObserver::new();
-    let mut vo_obs = VolumeObserver::new();
-    let mut pr_obs = PressureObserver::new();
-    let mut df_obs = DegreesOfFreedomObserver::new();
+    let mut observer = GeneralObserver::new();
 
     let mut rng: StdRng = StdRng::seed_from_u64(config.rng.seed);
 
@@ -198,9 +191,6 @@ fn main() {
         }
     };
 
-    // Observe degrees of freedom
-    df_obs.observe(&system);
-
     // Initialize force field
     let par_parser = match ParParser::with_path(config.input.par_path.unwrap()) {
         Ok(parser) => parser,
@@ -245,17 +235,8 @@ fn main() {
         .write_header()
         .expect("Failed to write CSV header");
 
-    ke_obs.observe(&system);
-    ue_obs.observe(&system, &ff);
-    et_obs.observe(&ke_obs, &ue_obs);
-    te_obs.observe(&ke_obs, &df_obs);
-    vi_obs.observe(&system, &ff);
-    vo_obs.observe(&system);
-    pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
     csv_reporter
-        .write_report(
-            0, &et_obs, &ue_obs, &ke_obs, &te_obs, &vi_obs, &vo_obs, &pr_obs,
-        )
+        .write_report(0, &mut observer, &system, &ff)
         .expect("Failed to write CSV frame");
 
     //**************************************
@@ -305,16 +286,7 @@ fn main() {
         }
 
         if step % config.output.csv_freq == 0 {
-            ke_obs.observe(&system);
-            ue_obs.observe(&system, &ff);
-            et_obs.observe(&ke_obs, &ue_obs);
-            te_obs.observe(&ke_obs, &df_obs);
-            vi_obs.observe(&system, &ff);
-            vo_obs.observe(&system);
-            pr_obs.observe(&vo_obs, &vi_obs, &te_obs, &df_obs);
-            match csv_reporter.write_report(
-                step, &et_obs, &ue_obs, &ke_obs, &te_obs, &vi_obs, &vo_obs, &pr_obs,
-            ) {
+            match csv_reporter.write_report(step, &mut observer, &system, &ff) {
                 Ok(_) => (),
                 Err(e) => {
                     eprintln!("Failed to write CSV frame: {}", e);

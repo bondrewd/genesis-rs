@@ -1,7 +1,6 @@
-use crate::observer::{
-    KineticEnergyObserver, PotentialEnergyObserver, PressureObserver, TemperatureObserver,
-    TotalEnergyObserver, VirialObserver, VolumeObserver,
-};
+use crate::ff::ForceField;
+use crate::observer::GeneralObserver;
+use crate::system::System;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -47,17 +46,12 @@ impl CSVReporter {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn write_report(
         &mut self,
         step: u32,
-        et_obs: &TotalEnergyObserver,
-        ue_obs: &PotentialEnergyObserver,
-        ke_obs: &KineticEnergyObserver,
-        te_obs: &TemperatureObserver,
-        vi_obs: &VirialObserver,
-        vo_obs: &VolumeObserver,
-        pr_obs: &PressureObserver,
+        observer: &mut GeneralObserver,
+        system: &System,
+        ff: &ForceField,
     ) -> io::Result<()> {
         // Init buffer
         let mut buffer = Vec::new();
@@ -67,13 +61,13 @@ impl CSVReporter {
             format!(
                 "{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
                 step,
-                et_obs.last_observation().unwrap(),
-                ue_obs.last_observation().unwrap(),
-                ke_obs.last_observation().unwrap(),
-                te_obs.last_observation().unwrap(),
-                vi_obs.last_observation().unwrap(),
-                vo_obs.last_observation().unwrap(),
-                pr_obs.last_observation().unwrap(),
+                observer.total_energy(system, ff),
+                observer.potential_energy(system, ff),
+                observer.kinetic_energy(system, ff),
+                observer.temperature(system, ff),
+                observer.virial(system, ff),
+                observer.volume(system, ff),
+                observer.pressure(system, ff),
             )
             .as_bytes(),
         );
