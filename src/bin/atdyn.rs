@@ -201,28 +201,6 @@ fn main() {
     // Observe degrees of freedom
     df_obs.observe(&system);
 
-    // Check output frequencies
-    if config.dynamics.num_steps % config.output.csv_freq != 0 {
-        eprintln!(
-            "Warning: num_steps is not a multiple of csv_freq: {} % {} != 0",
-            config.dynamics.num_steps, config.output.csv_freq
-        );
-    }
-
-    if config.dynamics.num_steps % config.output.dcd_freq != 0 {
-        eprintln!(
-            "Warning: num_steps is not a multiple of dcd_freq: {} % {} != 0",
-            config.dynamics.num_steps, config.output.dcd_freq
-        );
-    }
-
-    if config.dynamics.num_steps % config.output.rst_freq != 0 {
-        eprintln!(
-            "Warning: num_steps is not a multiple of rst_freq: {} % {} != 0",
-            config.dynamics.num_steps, config.output.rst_freq
-        );
-    }
-
     // Initialize force field
     let par_parser = match ParParser::with_path(config.input.par_path.unwrap()) {
         Ok(parser) => parser,

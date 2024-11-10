@@ -59,6 +59,7 @@ impl TryFrom<&Path> for Config {
         let config = std::fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&config)?;
 
+        // Resolve paths
         let resolver = |p: PathBuf| -> PathBuf {
             if p.is_absolute() {
                 p
@@ -78,6 +79,19 @@ impl TryFrom<&Path> for Config {
         config.output.log_path = config.output.log_path.map(resolver);
         config.output.rst_path = config.output.rst_path.map(resolver);
         config.output.xyz_path = config.output.xyz_path.map(resolver);
+
+        // Check output frequencies
+        if config.dynamics.num_steps % config.output.csv_freq != 0 {
+            return Err("num_steps in [dynamics] is not a multiple of csv_freq in [output]".into());
+        }
+
+        if config.dynamics.num_steps % config.output.dcd_freq != 0 {
+            return Err("num_steps in [dynamics] is not a multiple of dcd_freq in [output]".into());
+        }
+
+        if config.dynamics.num_steps % config.output.rst_freq != 0 {
+            return Err("num_steps in [dynamics] is not a multiple of rst_freq in [output]".into());
+        }
 
         Ok(config)
     }
