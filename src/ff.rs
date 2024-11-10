@@ -2,11 +2,6 @@ use crate::parser::par::ParParserResult;
 use crate::system::System;
 use nalgebra::DMatrix;
 
-// Prelude for ff module
-pub mod prelude {
-    pub use crate::ff::{ForceField, LennardJones, LennardJonesItem};
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct LennardJonesItem {
     pub epsilon: f32,

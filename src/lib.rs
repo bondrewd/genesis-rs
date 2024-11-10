@@ -8,8 +8,8 @@ pub mod timer;
 
 pub mod prelude {
     pub use crate::config::Config;
-    pub use crate::ff::prelude::*;
-    pub use crate::observer::prelude::*;
+    pub use crate::ff::ForceField;
+    pub use crate::observer::GeneralObserver;
     pub use crate::parser::mol::MolParser;
     pub use crate::parser::par::ParParser;
     pub use crate::parser::pos::PosParser;

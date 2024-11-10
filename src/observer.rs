@@ -1,14 +1,6 @@
 use crate::ff::ForceField;
 use crate::system::System;
 
-// Prelude for observer module
-pub mod prelude {
-    pub use crate::observer::{
-        DegreesOfFreedomObserver, GeneralObserver, KineticEnergyObserver, Observer,
-        PotentialEnergyObserver, VirialObserver, VolumeObserver,
-    };
-}
-
 pub type GeneralObserver = Observer<
     KineticEnergyObserver,
     PotentialEnergyObserver,
@@ -94,7 +86,7 @@ where
         let ke: f64 = self.kinetic_energy(system, ff).into();
         let df: f64 = self.degrees_of_freedom(system, ff).into();
         let boltzmann: f64 = 8.314462618;
-        2.0 * ke / (df as f64 * boltzmann)
+        2.0 * ke / (df * boltzmann)
     }
 
     pub fn pressure(&mut self, system: &System, ff: &ForceField) -> f64 {
